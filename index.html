@@ -3,16 +3,14 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PathoFlex - Corporate Wellness SaaS</title>
-    <!-- Tailwind CSS for sleek UI -->
+    <title>PathoFlex SaaS - Advanced RBAC Engine</title>
+    <!-- Tailwind CSS for modern SaaS UI -->
     <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
     <!-- React and ReactDOM CDNs -->
     <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
     <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
-    <!-- Babel for JSX compilation in browser -->
+    <!-- Babel for live JSX compilation -->
     <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
-    <!-- Lucide Icons for SaaS Vibe -->
-    <script src="https://unpkg.com/lucide@latest"></script>
     <style>
         @media print {
             body * { visibility: hidden; }
@@ -27,14 +25,15 @@
     <div id="root"></div>
 
     <script type="text/babel">
-        // --- SEED DATA / DATABASE STRUCTURE ---
+        // --- CONSTANT DICTIONARIES ---
+        const ROLES = ['ADMIN', 'USER', 'DOCTOR', 'HR', 'PATHOLOGIST'];
+
         const INITIAL_TEST_LIBRARY = [
             { id: 'T1', name: 'Complete Blood Count (CBC)', cost: 15 },
             { id: 'T2', name: 'Fast Blood Sugar (FBS)', cost: 10 },
             { id: 'T3', name: 'Lipid Profile', cost: 30 },
             { id: 'T4', name: 'Liver Function Test (LFT)', cost: 25 },
-            { id: 'T5', name: 'Kidney Function Test (KFT)', cost: 25 },
-            { id: 'T6', name: 'Thyroid Panel (T3, T4, TSH)', cost: 35 }
+            { id: 'T5', name: 'Kidney Function Test (KFT)', cost: 25 }
         ];
 
         const INITIAL_EMPLOYEES = [
@@ -75,700 +74,444 @@
         ];
 
         function App() {
-            // App Core States
-            const [currentRole, setCurrentRole] = React.useState('ADMIN');
-            const [currentUser, setCurrentUser] = React.useState(INITIAL_EMPLOYEES[5]); // Default Admin
+            // App Global States
             const [employees, setEmployees] = React.useState(INITIAL_EMPLOYEES);
             const [testLibrary, setTestLibrary] = React.useState(INITIAL_TEST_LIBRARY);
             const [requests, setRequests] = React.useState(INITIAL_REQUESTS);
             
-            // UI Navigation State
-            const [activeTab, setActiveTab] = React.useState('dashboard');
+            // Security Context: Who is currently logged into the session
+            const [sessionUser, setSessionUser] = React.useState(INITIAL_EMPLOYEES[5]); // Default logged in as Devon (Admin)
             
-            // Print Target Modal State
+            // Navigation Router State
+            const [activeTab, setActiveTab] = React.useState('dashboard');
             const [activePrintJob, setActivePrintJob] = React.useState(null);
-
-            // Notification Feedback State
             const [toast, setToast] = React.useState(null);
+
             const triggerToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
-            // Handle Role Swapping Mirror Logic
-            const handleRoleChange = (roleName) => {
-                setCurrentRole(roleName);
-                const matchedUser = employees.find(e => e.role === roleName) || employees[0];
-                setCurrentUser(matchedUser);
-                triggerToast(`Switched workspace context to ${roleName}`);
+            // Dynamic Session Switching Logic
+            const handleSessionUserSwitch = (empId) => {
+                const user = employees.find(e => e.id === empId);
+                if (user) {
+                    setSessionUser(user);
+                    triggerToast(`Logged in as ${user.name} (${user.role})`);
+                }
             };
 
-            // Business Rule Helper: Get usage metrics for any employee
+            // Admin action: Directly alter a target employee's systemic authorization role
+            const handleUpdateUserRole = (empId, newRole) => {
+                setEmployees(prevEmployees => {
+                    const updated = prevEmployees.map(e => e.id === empId ? { ...e, role: newRole } : e);
+                    
+                    // Critical Synchronicity Lock: If the updated user is the active session user, update the live context immediately
+                    const updatedSessionUser = updated.find(e => e.id === sessionUser.id);
+                    if (updatedSessionUser) {
+                        setSessionUser(updatedSessionUser);
+                    }
+                    return updated;
+                });
+                triggerToast(`Role successfully changed to ${newRole}`);
+            };
+
+            // Calculation Engine Metrics Helper
             const getEmployeeMetrics = (empId) => {
                 const empRequests = requests.filter(r => r.empId === empId);
                 const completed = empRequests.filter(r => r.status === 'COMPLETED').length;
                 const approved = empRequests.filter(r => r.status === 'PENDING_PATHOLOGIST').length;
-                const pending = empRequests.filter(r => r.status === 'PENDING_DOC' || r.status === 'PENDING_HR').length;
-                const totalUsed = completed + approved; // Total structural deductions
+                const totalUsed = completed + approved; 
                 return {
                     completed,
                     approved,
-                    pending,
+                    pending: empRequests.filter(r => r.status === 'PENDING_DOC' || r.status === 'PENDING_HR').length,
                     totalUsed,
                     remaining: Math.max(0, 5 - totalUsed)
                 };
             };
 
-            // Global Print Trigger
             const triggerPrint = (request) => {
                 setActivePrintJob(request);
-                setTimeout(() => {
-                    window.print();
-                }, 500);
+                setTimeout(() => { window.print(); }, 3000);
             };
 
-            // Mock Data Bulk Export (CSV/Excel simulator)
             const handleExportData = (type) => {
                 let dataString = "data:text/csv;charset=utf-8,";
                 if(type === 'SUMMARY') {
-                    dataString += "Employee ID,Name,Tests Used,Remaining Status\n";
+                    dataString += "Employee ID,Name,Role,Tests Used,Remaining Status\n";
                     employees.forEach(e => {
                         const m = getEmployeeMetrics(e.id);
-                        dataString += `${e.id},${e.name},${m.totalUsed},${m.remaining}\n`;
-                    });
-                } else {
-                    dataString += "Request ID,Patient,Relationship,Status,Date\n";
-                    requests.forEach(r => {
-                        dataString += `${r.id},${r.patientName},${r.relationship},${r.status},${r.date}\n`;
+                        dataString += `${e.id},${e.name},${e.role},${m.totalUsed},${m.remaining}\n`;
                     });
                 }
                 const encodedUri = encodeURI(dataString);
                 const link = document.createElement("a");
                 link.setAttribute("href", encodedUri);
-                link.setAttribute("download", `${type}_REPORT_${new Date().toISOString().split('T')[0]}.csv`);
+                link.setAttribute("download", `${type}_REPORT.csv`);
                 document.body.appendChild(link);
                 link.click();
                 document.body.removeChild(link);
-                triggerToast("Report exported successfully!");
+                triggerToast("Data matrix downloaded.");
             };
 
             return (
                 <div class="min-h-screen flex flex-col justify-between">
-                    {/* Top Alert System Notification Bar */}
                     {toast && (
-                        <div class="fixed top-4 right-4 bg-emerald-500 text-slate-950 px-4 py-3 rounded-lg shadow-2xl font-bold flex items-center space-x-2 z-50 animate-bounce">
+                        <div class="fixed top-4 right-4 bg-emerald-500 text-slate-950 px-4 py-3 rounded-lg shadow-2xl font-bold z-50">
                             <span>{toast}</span>
                         </div>
                     )}
 
-                    {/* TOP NAVBAR */}
-                    <header class="bg-slate-950 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between no-print">
+                    {/* TOP REAL-TIME SECURITY SIMULATOR BAR */}
+                    <header class="bg-slate-950 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between no-print gap-4">
                         <div class="flex items-center space-x-3">
-                            <div class="bg-indigo-600 p-2 rounded-lg text-white font-black tracking-wider">🔬 PATHOFLEX</div>
-                            <span class="text-xs text-slate-400 font-mono">v1.0.0-Beta44</span>
+                            <div class="bg-indigo-600 p-2 rounded-lg text-white font-black tracking-wider text-sm">🔬 PATHOFLEX SaaS</div>
+                            <span class="text-xs font-mono text-emerald-400 bg-emerald-950/50 px-2 py-0.5 border border-emerald-900 rounded">RBAC v2 Engine Active</span>
                         </div>
 
-                        {/* Fast Prototyping Context Switcher */}
-                        <div class="flex items-center space-x-4 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
-                            <span class="text-xs font-semibold uppercase text-slate-400 px-2">Vibe Role:</span>
-                            {['ADMIN', 'USER', 'DOCTOR', 'HR', 'PATHOLOGIST'].map((role) => (
-                                <button
-                                    key={role}
-                                    onClick={() => handleRoleChange(role)}
-                                    class={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
-                                        currentRole === role 
-                                        ? 'bg-indigo-500 text-white shadow-md' 
-                                        : 'text-slate-400 hover:text-white'
-                                    }`}
-                                >
-                                    {role}
-                                </button>
-                            ))}
-                        </div>
-
-                        <div class="text-right hidden md:block">
-                            <p class="text-xs font-bold text-slate-300">{currentUser.name}</p>
-                            <span class="text-[10px] font-mono bg-slate-800 text-indigo-400 px-1.5 py-0.5 rounded uppercase">{currentRole} Context</span>
+                        {/* Interactive Session Switcher Mocking Login Environment */}
+                        <div class="flex items-center space-x-3 bg-slate-900 p-2 rounded-xl border border-slate-800">
+                            <label class="text-xs text-slate-400 uppercase font-bold px-1">Mock Acting Profile:</label>
+                            <select 
+                                value={sessionUser.id}
+                                onChange={(e) => handleSessionUserSwitch(e.target.value)}
+                                class="bg-slate-950 border border-slate-700 text-xs text-indigo-400 font-bold p-1.5 rounded-lg focus:outline-none"
+                            >
+                                {employees.map(emp => (
+                                    <option key={emp.id} value={emp.id}>
+                                        {emp.name} ({emp.role})
+                                    </option>
+                                ))}
+                            </select>
                         </div>
                     </header>
 
-                    {/* MAIN APPLICATION WORKSPACE */}
+                    {/* MAIN APPLICATION MODULE SLOTS */}
                     <div class="flex-1 flex flex-col md:flex-row no-print">
-                        {/* SIDEBAR NAVIGATION */}
-                        <nav class="w-full md:w-64 bg-slate-950 p-4 space-y-2 border-r border-slate-800">
-                            <p class="text-[10px] font-bold text-slate-500 tracking-wider uppercase px-3">Views</p>
-                            <button onClick={() => setActiveTab('dashboard')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'dashboard' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Dashboard</button>
-                            <button onClick={() => setActiveTab('requests')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'requests' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Test Requests</button>
+                        {/* NAVIGATION LINKS */}
+                        <nav class="w-full md:w-64 bg-slate-950 p-4 space-y-1.5 border-r border-slate-800">
+                            <p class="text-[10px] font-bold text-slate-500 tracking-wider uppercase px-3">Main Navigation</p>
+                            <button onClick={() => setActiveTab('dashboard')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center transition-colors ${activeTab === 'dashboard' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500 font-bold' : 'hover:bg-slate-900 text-slate-400 hover:text-slate-200'}`}>Workspace Central</button>
+                            <button onClick={() => setActiveTab('requests')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center transition-colors ${activeTab === 'requests' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500 font-bold' : 'hover:bg-slate-900 text-slate-400 hover:text-slate-200'}`}>Diagnostic Registry Pipeline</button>
                             
-                            {currentRole === 'ADMIN' && (
+                            {/* RBAC Gate - Admin Section Visibility */}
+                            {sessionUser.role === 'ADMIN' && (
                                 <>
-                                    <p class="text-[10px] font-bold text-slate-500 tracking-wider uppercase px-3 pt-4">Admin Suite</p>
-                                    <button onClick={() => setActiveTab('employees')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'employees' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Manage Employees</button>
-                                    <button onClick={() => setActiveTab('library')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'library' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Test Directory</button>
+                                    <p class="text-[10px] font-bold text-slate-500 tracking-wider uppercase px-3 pt-6">Root Authority Control</p>
+                                    <button onClick={() => setActiveTab('employees')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center transition-colors ${activeTab === 'employees' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500 font-bold' : 'hover:bg-slate-900 text-slate-400 hover:text-slate-200'}`}>Manage Personnel & Roles</button>
+                                    <button onClick={() => setActiveTab('library')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center transition-colors ${activeTab === 'library' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500 font-bold' : 'hover:bg-slate-900 text-slate-400 hover:text-slate-200'}`}>Pathology Directory</button>
                                 </>
                             )}
                         </nav>
 
-                        {/* ROUTER CONTENT CONTROLLER */}
+                        {/* CONTROLLER CONTENT AREA ROUTER */}
                         <main class="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
-                            {activeTab === 'dashboard' && <DashboardView requests={requests} employees={employees} currentUser={currentUser} currentRole={currentRole} getEmployeeMetrics={getEmployeeMetrics} handleExportData={handleExportData} />}
-                            {activeTab === 'requests' && <RequestsView requests={requests} setRequests={setRequests} testLibrary={testLibrary} currentUser={currentUser} currentRole={currentRole} getEmployeeMetrics={getEmployeeMetrics} triggerPrint={triggerPrint} triggerToast={triggerToast} />}
-                            {activeTab === 'employees' && currentRole === 'ADMIN' && <EmployeesView employees={employees} setEmployees={setEmployees} getEmployeeMetrics={getEmployeeMetrics} triggerToast={triggerToast} />}
-                            {activeTab === 'library' && currentRole === 'ADMIN' && <LibraryView testLibrary={testLibrary} setTestLibrary={setTestLibrary} triggerToast={triggerToast} />}
+                            {activeTab === 'dashboard' && <DashboardView requests={requests} sessionUser={sessionUser} getEmployeeMetrics={getEmployeeMetrics} handleExportData={handleExportData} />}
+                            {activeTab === 'requests' && <RequestsView requests={requests} setRequests={setRequests} testLibrary={testLibrary} sessionUser={sessionUser} getEmployeeMetrics={getEmployeeMetrics} triggerPrint={triggerPrint} triggerToast={triggerToast} />}
+                            {activeTab === 'employees' && sessionUser.role === 'ADMIN' && <EmployeesView employees={employees} setEmployees={setEmployees} handleUpdateUserRole={handleUpdateUserRole} getEmployeeMetrics={getEmployeeMetrics} triggerToast={triggerToast} />}
+                            {activeTab === 'library' && sessionUser.role === 'ADMIN' && <LibraryView testLibrary={testLibrary} setTestLibrary={setTestLibrary} triggerToast={triggerToast} />}
                         </main>
                     </div>
 
-                    {/* --- INVISIBLE PRINT LAYER (Triggered via system UI mechanics) --- */}
+                    {/* INVISIBLE SYSTEM PRINT LAYER VIEWPORT */}
                     <div id="print-area" class="hidden print:block p-8 text-slate-950 bg-white min-h-screen">
                         {activePrintJob && (
                             <div>
-                                <div class="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-center">
-                                    <div>
-                                        <h1 class="text-2xl font-black uppercase tracking-tight">PATHOFLEX DISPATCH</h1>
-                                        <p class="text-sm">Corporate Medical Diagnostic Authorization Slip</p>
-                                    </div>
-                                    <div class="text-right font-mono text-xs">
-                                        <p><strong>Slip Token:</strong> {activePrintJob.id}</p>
-                                        <p><strong>Date Generated:</strong> {activePrintJob.date}</p>
-                                    </div>
+                                <h1 class="text-xl font-black border-b-2 border-slate-900 pb-2 mb-4 uppercase tracking-tight">PATHOFLEX WORK ORDER SLIP</h1>
+                                <p class="text-xs mb-4"><strong>Tracking Code ID:</strong> {activePrintJob.id} | <strong>Date Issued:</strong> {activePrintJob.date}</p>
+                                <div class="mb-4 text-xs">
+                                    <p><strong>Patient File:</strong> {activePrintJob.patientName} ({activePrintJob.relationship})</p>
+                                    <p><strong>Filing Corporate Account Node:</strong> {activePrintJob.empId}</p>
                                 </div>
-                                <div class="grid grid-cols-2 gap-4 mb-6 text-sm">
-                                    <div>
-                                        <h3 class="font-bold uppercase text-slate-600 text-xs">Patient Details</h3>
-                                        <p class="text-base font-bold">{activePrintJob.patientName}</p>
-                                        <p>Relation Framework: <span class="font-semibold">{activePrintJob.relationship}</span></p>
-                                    </div>
-                                    <div>
-                                        <h3 class="font-bold uppercase text-slate-600 text-xs">Authorization Profile</h3>
-                                        <p>Corporate Acc ID: {activePrintJob.empId}</p>
-                                        <p>Current Status: <span class="font-bold tracking-wider">{activePrintJob.status}</span></p>
-                                    </div>
-                                </div>
-                                <div class="mb-8">
-                                    <h3 class="font-bold uppercase text-slate-600 text-xs mb-2">Prescribed Clinical Assays</h3>
-                                    <table class="w-full text-left border-collapse">
-                                        <thead>
-                                            <tr class="border-b border-slate-300 text-xs bg-slate-100">
-                                                <th class="p-2">Assay Code</th>
-                                                <th class="p-2">Description / Name</th>
-                                                <th class="p-2 text-right">Status</th>
+                                <table class="w-full text-left text-xs border-collapse border border-slate-300">
+                                    <thead>
+                                        <tr class="bg-slate-100 border-b border-slate-300">
+                                            <th class="p-2">Assay Code</th>
+                                            <th class="p-2">Diagnostic Test Description</th>
+                                            <th class="p-2 text-right">Status Flag</th>
+                                        </tr>
+                                    </thead>
+                                    <tbody>
+                                        {activePrintJob.tests.map((t, idx) => (
+                                            <tr key={idx} class="border-b border-slate-200">
+                                                <td class="p-2 font-mono">{t.id}</td>
+                                                <td class="p-2 font-medium">{t.name}</td>
+                                                <td class="p-2 text-right font-bold">{t.approved ? "AUTHORIZED" : "REJECTED"}</td>
                                             </tr>
-                                        </thead>
-                                        <tbody>
-                                            {activePrintJob.tests.map((t, idx) => (
-                                                <tr key={idx} class="border-b border-slate-200 text-sm">
-                                                    <td class="p-2 font-mono">{t.id}</td>
-                                                    <td class="p-2 font-medium">{t.name}</td>
-                                                    <td class="p-2 text-right font-bold text-xs">{t.approved ? "APPROVED/ACTIVE" : "EXCLUDED/REJECTED"}</td>
-                                                </tr>
-                                            ))}
-                                        </tbody>
-                                    </table>
-                                </div>
-                                <div class="mt-16 flex justify-between pt-8 border-t border-dashed border-slate-400 text-center text-xs">
-                                    <div>
-                                        <div class="w-40 border-b border-slate-900 mx-auto mb-1"></div>
-                                        <p>Authorized Medical Officer</p>
-                                    </div>
-                                    <div>
-                                        <div class="w-40 border-b border-slate-900 mx-auto mb-1"></div>
-                                        <p>Corporate HR Verification</p>
-                                    </div>
-                                    <div>
-                                        <div class="w-40 border-b border-slate-900 mx-auto mb-1"></div>
-                                        <p>Pathology Unit Reciever</p>
-                                    </div>
-                                </div>
+                                        ))}
+                                    </tbody>
+                                </table>
                             </div>
                         )}
                     </div>
 
-                    {/* VIBE CODER FOOTER */}
-                    <footer class="bg-slate-950 border-t border-slate-800 px-6 py-3 text-center text-xs text-slate-500 no-print flex flex-col md:flex-row justify-between items-center gap-2">
-                        <p>Built with ⚡ React, Tailwind & Pure Polish. Single-File Production Sandbox.</p>
-                        <div class="flex space-x-4">
-                            <span class="hover:text-slate-300 cursor-pointer">API Webhook Spec</span>
-                            <span class="hover:text-slate-300 cursor-pointer">Base44 Engine Docs</span>
-                        </div>
+                    <footer class="bg-slate-950 border-t border-slate-800 px-6 py-3 text-center text-xs text-slate-500 no-print">
+                        <p>Production Framework Stack Sandbox Engine. Secure Role-Based Access Enforcement Modules.</p>
                     </footer>
                 </div>
             );
         }
 
-        // --- DASHBOARD ROUTE VIEW ---
-        function DashboardView({ requests, employees, currentUser, currentRole, getEmployeeMetrics, handleExportData }) {
-            const metrics = getEmployeeMetrics(currentUser.id);
-            const systemTotalRequests = requests.length;
-            const systemPendingHR = requests.filter(r => r.status === 'PENDING_HR').length;
-            const systemPendingDoc = requests.filter(r => r.status === 'PENDING_DOC').length;
-
-            // Security Filtering Logic: Non-Admins ONLY see their own rows
-            const visibleRequests = currentRole === 'ADMIN' 
+        // --- VIEW COMPONENT 1: DASHBOARD ---
+        function DashboardView({ requests, sessionUser, getEmployeeMetrics, handleExportData }) {
+            const metrics = getEmployeeMetrics(sessionUser.id);
+            
+            // Dynamic Enforcement Rule 2: Non-admins are completely isolated to seeing only their personal data row rows
+            const visibleRequests = sessionUser.role === 'ADMIN' 
                 ? requests 
-                : requests.filter(r => r.empId === currentUser.id || (currentRole === 'DOCTOR' && r.status === 'PENDING_DOC') || (currentRole === 'HR' && r.status === 'PENDING_HR') || (currentRole === 'PATHOLOGIST' && r.status === 'PENDING_PATHOLOGIST'));
-
-            return (
-                <div class="space-y-6">
-                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                        <div>
-                            <h2 class="text-2xl font-bold tracking-tight">Workspace Central</h2>
-                            <p class="text-sm text-slate-400">Real-time status metrics and authorization pipelines.</p>
-                        </div>
-                        <div class="flex items-center space-x-2">
-                            <button onClick={() => handleExportData('SUMMARY')} class="bg-slate-800 hover:bg-slate-700 text-xs font-bold px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1">📥 Export Metrics CSV</button>
-                            <button onClick={() => handleExportData('REQUESTS')} class="bg-slate-800 hover:bg-slate-700 text-xs font-bold px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1">📥 Export Audit Logs</button>
-                        </div>
-                    </div>
-
-                    {/* METRIC CARD GRID ARCHITECTURE */}
-                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
-                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Personal Entitlements Used</p>
-                            <p class="text-3xl font-extrabold text-indigo-400 mt-1">{metrics.totalUsed} <span class="text-sm font-normal text-slate-500">/ 5</span></p>
-                            <p class="text-[11px] text-slate-400 mt-1">Based on Approved/Active orders</p>
-                        </div>
-                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remaining Safe Requests</p>
-                            <p class="text-3xl font-extrabold text-emerald-400 mt-1">{metrics.remaining}</p>
-                            <p class="text-[11px] text-slate-400 mt-1">Autoblock protection threshold</p>
-                        </div>
-                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pipeline Queue (Global)</p>
-                            <p class="text-3xl font-extrabold text-amber-400 mt-1">{systemPendingDoc + systemPendingHR}</p>
-                            <p class="text-[11px] text-slate-400 mt-1">{systemPendingDoc} Doc / {systemPendingHR} HR Pending</p>
-                        </div>
-                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
-                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Corporate Verification Rank</p>
-                            <p class="text-lg font-bold text-slate-200 mt-2 truncate">{currentUser.isConfirmed ? "✅ Confirmed Staff" : "❌ Unconfirmed Status"}</p>
-                            <p class="text-[11px] text-slate-500">Facility locks if unconfirmed</p>
-                        </div>
-                    </div>
-
-                    {/* LIVE VIEW FEED/TABLE */}
-                    <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
-                        <div class="px-4 py-3 bg-slate-900 border-b border-slate-800 flex justify-between items-center">
-                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Authorized Data Feed Window</h3>
-                            <span class="text-[10px] font-mono text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded">Showing {visibleRequests.length} relative nodes</span>
-                        </div>
-                        <div class="overflow-x-auto">
-                            <table class="w-full text-left border-collapse text-sm">
-                                <thead>
-                                    <tr class="border-b border-slate-800 text-xs text-slate-400 bg-slate-900/50">
-                                        <th class="p-3">Req ID</th>
-                                        <th class="p-3">Patient Name</th>
-                                        <th class="p-3">Relation</th>
-                                        <th class="p-3">Date Ordered</th>
-                                        <th class="p-3">Status Pipeline</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-800">
-                                    {visibleRequests.map((r) => (
-                                        <tr key={r.id} class="hover:bg-slate-900/60 transition-colors">
-                                            <td class="p-3 font-mono font-bold text-xs text-indigo-400">{r.id}</td>
-                                            <td class="p-3 font-medium text-slate-200">{r.patientName}</td>
-                                            <td class="p-3"><span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">{r.relationship}</span></td>
-                                            <td class="p-3 text-xs text-slate-400">{r.date}</td>
-                                            <td class="p-3">
-                                                <span class={`text-[10px] font-bold tracking-wider px-2 py-1 rounded uppercase ${
-                                                    r.status === 'COMPLETED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
-                                                    r.status === 'PENDING_DOC' ? 'bg-indigo-950 text-indigo-400 border border-indigo-800' :
-                                                    r.status === 'PENDING_HR' ? 'bg-amber-950 text-amber-400 border border-amber-800' :
-                                                    'bg-purple-950 text-purple-400 border border-purple-800'
-                                                }`}>
-                                                    {r.status}
-                                                </span>
-                                            </td>
-                                        </tr>
-                                    ))}
-                                    {visibleRequests.length === 0 && (
-                                        <tr>
-                                            <td colSpan="5" class="p-8 text-center text-slate-500 italic text-xs">No records tracked under this identity footprint.</td>
-                                        </tr>
-                                    )}
-                                </tbody>
-                            </table>
-                        </div>
-                    </div>
-                </div>
-            );
-        }
-
-        // --- REQUESTS ROUTE VIEW (The Operations Engine) ---
-        function RequestsView({ requests, setRequests, testLibrary, currentUser, currentRole, getEmployeeMetrics, triggerPrint, triggerToast }) {
-            // New Form States
-            const [isNewModalOpen, setIsNewModalOpen] = React.useState(false);
-            const [patientName, setPatientName] = React.useState('');
-            const [relationship, setRelationship] = React.useState('Self');
-            const [selectedTests, setSelectedTests] = React.useState([]);
-
-            // Quick Preview Engine for HR
-            const [previewMetrics, setPreviewMetrics] = React.useState(null);
-
-            const handleToggleTestSelection = (testId) => {
-                if(selectedTests.includes(testId)) {
-                    setSelectedTests(selectedTests.filter(id => id !== testId));
-                } else {
-                    setSelectedTests([...selectedTests, testId]);
-                }
-            };
-
-            // Rule Framework Check: Verification status + Counter Hard Limit
-            const handleCreateRequest = (e) => {
-                e.preventDefault();
-
-                if (!currentUser.isConfirmed) {
-                    alert("OPERATION BLOCKED: Only Confirmed Corporate Staff Can Avail Medical Allocations.");
-                    return;
-                }
-
-                const currentUsage = getEmployeeMetrics(currentUser.id);
-                if (currentUsage.totalUsed >= 5) {
-                    alert("AUTO NEW TEST REQUEST RESTRICTION TRIGGERED: You have completely used your 5 free diagnostic tests for the annual billing cycle.");
-                    return;
-                }
-
-                if (selectedTests.length === 0) {
-                    alert("Please select at least one clinical assay test.");
-                    return;
-                }
-
-                const newRequestObj = {
-                    id: `REQ-${Math.floor(1000 + Math.random() * 9000)}`,
-                    empId: currentUser.id,
-                    patientName: relationship === 'Self' ? `${currentUser.name} (Self)` : patientName,
-                    relationship,
-                    tests: selectedTests.map(id => {
-                        const libItem = testLibrary.find(t => t.id === id);
-                        return { id: libItem.id, name: libItem.name, approved: true };
-                    }),
-                    status: 'PENDING_DOC', // Auto-forwards directly to Doctor validation
-                    date: new Date().toISOString().split('T')[0],
-                    historyLog: ['Requested by User']
-                };
-
-                setRequests([newRequestObj, ...requests]);
-                setIsNewModalOpen(false);
-                // Clear Form Fields
-                setPatientName('');
-                setRelationship('Self');
-                setSelectedTests([]);
-                triggerToast("Diagnostic entry request saved to the pipeline!");
-            };
-
-            // Doctor Checkbox Mutation Engine
-            const toggleTestApprovalByDoctorOrPathologist = (requestId, testId) => {
-                setRequests(requests.map(req => {
-                    if (req.id === requestId) {
-                        const updatedTests = req.tests.map(t => t.id === testId ? { ...t, approved: !t.approved } : t);
-                        return { ...req, tests: updatedTests };
-                    }
-                    return req;
-                }));
-            };
-
-            // Pipeline Stage State Machine Transitions
-            const advancePipelineStage = (reqId, currentStage, action) => {
-                setRequests(requests.map(req => {
-                    if (req.id === reqId) {
-                        let nextStatus = req.status;
-                        let logEntry = '';
-
-                        if (currentStage === 'PENDING_DOC') {
-                            if (action === 'APPROVE') {
-                                nextStatus = 'PENDING_HR';
-                                logEntry = 'Validated & Approved by Clinical Doctor';
-                            } else {
-                                nextStatus = 'REJECTED_BY_DOC';
-                                logEntry = 'Rejected by Doctor';
-                            }
-                        } else if (currentStage === 'PENDING_HR') {
-                            const employeeUsage = getEmployeeMetrics(req.empId);
-                            
-                            if (action === 'APPROVE') {
-                                // Double safeguard limit validation check inside HR processing loop
-                                if (employeeUsage.totalUsed >= 5 && currentRole !== 'ADMIN') {
-                                    alert("CRITICAL SECURITY VIOLATION: Usage footprint exceeds maximum allowed threshold. Only Root Administrators can manually bypass and approve this request override.");
-                                    return req;
-                                }
-                                nextStatus = 'PENDING_PATHOLOGIST';
-                                logEntry = 'HR Budget Allocation Confirmed';
-                            } else {
-                                nextStatus = 'REJECTED_BY_HR';
-                                logEntry = 'HR Budget Allocation Denied';
-                            }
-                        } else if (currentStage === 'PENDING_PATHOLOGIST') {
-                            if (action === 'COMPLETE') {
-                                nextStatus = 'COMPLETED';
-                                logEntry = 'Assay Work Completed & Closed by Lab Technician';
-                            }
-                        }
-
-                        return {
-                            ...req,
-                            status: nextStatus,
-                            historyLog: [...req.historyLog, logEntry]
-                        };
-                    }
-                    return req;
-                }));
-                triggerToast(`Request state updated smoothly.`);
-            };
-
-            // Filter views based on permission rules
-            const visibleRequests = currentRole === 'ADMIN' 
-                ? requests 
-                : requests.filter(r => r.empId === currentUser.id || (currentRole === 'DOCTOR' && r.status === 'PENDING_DOC') || (currentRole === 'HR' && r.status === 'PENDING_HR') || (currentRole === 'PATHOLOGIST' && r.status === 'PENDING_PATHOLOGIST'));
+                : requests.filter(r => r.empId === sessionUser.id || (sessionUser.role === 'DOCTOR' && r.status === 'PENDING_DOC') || (sessionUser.role === 'HR' && r.status === 'PENDING_HR') || (sessionUser.role === 'PATHOLOGIST' && r.status === 'PENDING_PATHOLOGIST'));
 
             return (
                 <div class="space-y-6">
                     <div class="flex items-center justify-between">
                         <div>
-                            <h2 class="text-2xl font-bold tracking-tight">Diagnostic Pipeline Registry</h2>
-                            <p class="text-sm text-slate-400">Process, manage, validate and issue operational diagnostic workflows.</p>
+                            <h2 class="text-2xl font-bold tracking-tight">Workspace Dashboard</h2>
+                            <p class="text-sm text-slate-400">Current systemic workspace visibility acting as: <span class="text-indigo-400 font-bold font-mono">{sessionUser.role}</span></p>
                         </div>
-                        
-                        {/* Only Allow Users / Doctors / Pathologists who are executing user actions to raise requests */}
-                        {currentUser.isConfirmed && (
-                            <button 
-                                onClick={() => {
-                                    const metrics = getEmployeeMetrics(currentUser.id);
-                                    if(metrics.totalUsed >= 5) {
-                                        alert("AUTO BLOCKED: Your account usage metrics state you have already consumed your full 5 time allowance limit.");
-                                    } else {
-                                        setIsNewModalOpen(true);
-                                    }
-                                }} 
-                                class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg"
-                            >
-                                ➕ File New Request Request
-                            </button>
+                        <button onClick={() => handleExportData('SUMMARY')} class="bg-slate-950 hover:bg-slate-800 border border-slate-800 text-xs font-bold px-3 py-2 rounded-xl">📥 Download Summary Report</button>
+                    </div>
+
+                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Your Personal Allocations Used</p>
+                            <p class="text-2xl font-extrabold text-indigo-400 mt-1">{metrics.totalUsed} <span class="text-xs font-normal text-slate-500">/ 5 tests</span></p>
+                        </div>
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Remaining Free Assays Scope</p>
+                            <p class="text-2xl font-extrabold text-emerald-400 mt-1">{metrics.remaining}</p>
+                        </div>
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <p class="text-[10px] text-slate-400 font-bold uppercase tracking-wider">Verified Corporate Status Rank</p>
+                            <p class="text-base font-bold text-slate-200 mt-2">{sessionUser.isConfirmed ? "✅ Confirmed Profile Status" : "❌ Non-Confirmed Lock"}</p>
+                        </div>
+                    </div>
+
+                    <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                        <div class="px-4 py-3 bg-slate-900 border-b border-slate-800 text-xs font-bold uppercase text-slate-400 tracking-wider">
+                            Authorized Pipeline Stream Data
+                        </div>
+                        <table class="w-full text-left border-collapse text-sm">
+                            <thead>
+                                <tr class="bg-slate-900/40 text-xs text-slate-400 border-b border-slate-800">
+                                    <th class="p-3">ID</th>
+                                    <th class="p-3">Patient Legal Identity</th>
+                                    <th class="p-3">Relation</th>
+                                    <th class="p-3">Status State Machine</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800">
+                                {visibleRequests.map(r => (
+                                    <tr key={r.id} class="hover:bg-slate-900/40">
+                                        <td class="p-3 font-mono text-xs font-bold text-indigo-400">{r.id}</td>
+                                        <td class="p-3 font-medium">{r.patientName}</td>
+                                        <td class="p-3 text-xs text-slate-400">{r.relationship}</td>
+                                        <td class="p-3">
+                                            <span class="text-[10px] font-mono font-bold tracking-widest uppercase bg-slate-900 px-2 py-0.5 rounded border border-slate-800 text-amber-400">{r.status}</span>
+                                        </td>
+                                    </tr>
+                                ))}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- VIEW COMPONENT 2: TEST REQUEST PIPELINE ---
+        function RequestsView({ requests, setRequests, testLibrary, sessionUser, getEmployeeMetrics, triggerPrint, triggerToast }) {
+            const [isOpen, setIsOpen] = React.useState(false);
+            const [patientName, setPatientName] = React.useState('');
+            const [relation, setRelation] = React.useState('Self');
+            const [selectedTests, setSelectedTests] = React.useState([]);
+            const [hrPreviewData, setHrPreviewData] = React.useState(null);
+
+            const handleToggleCheckbox = (id) => {
+                setSelectedTests(prev => prev.includes(id) ? prev.filter(i => i !== id) : [...prev, id]);
+            };
+
+            const handleSubmitRequest = (e) => {
+                e.preventDefault();
+                if(!sessionUser.isConfirmed) return alert("Operation Blocked: Account Profile Not Confirmed.");
+                if(getEmployeeMetrics(sessionUser.id).totalUsed >= 5) return alert("System Rule Block: Max Annual Allocation Consumed.");
+
+                const newObj = {
+                    id: `REQ-${Math.floor(1000 + Math.random()*9000)}`,
+                    empId: sessionUser.id,
+                    patientName: relation === 'Self' ? `${sessionUser.name} (Self)` : patientName,
+                    relationship: relation,
+                    tests: selectedTests.map(id => ({ id, name: testLibrary.find(t=>t.id===id).name, approved: true })),
+                    status: 'PENDING_DOC',
+                    date: new Date().toISOString().split('T')[0],
+                    historyLog: ['Filed Into Core Engine']
+                };
+
+                setRequests([newObj, ...requests]);
+                setIsOpen(false);
+                setSelectedTests([]);
+                setPatientName('');
+                triggerToast("Diagnostic transaction filed successfully!");
+            };
+
+            const mutateTestCheckboxState = (reqId, testId) => {
+                setRequests(prev => prev.map(r => r.id === reqId ? {
+                    ...r, tests: r.tests.map(t => t.id === testId ? { ...t, approved: !t.approved } : t)
+                } : r));
+            };
+
+            const advanceState = (id, next, log) => {
+                setRequests(prev => prev.map(r => r.id === id ? { ...r, status: next, historyLog: [...r.historyLog, log] } : r));
+                triggerToast("Pipeline processing step updated.");
+            };
+
+            const visibleRequests = sessionUser.role === 'ADMIN' 
+                ? requests 
+                : requests.filter(r => r.empId === sessionUser.id || (sessionUser.role === 'DOCTOR' && r.status === 'PENDING_DOC') || (sessionUser.role === 'HR' && r.status === 'PENDING_HR') || (sessionUser.role === 'PATHOLOGIST' && r.status === 'PENDING_PATHOLOGIST'));
+
+            return (
+                <div class="space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold tracking-tight">Diagnostic Registry Pipeline</h2>
+                            <p class="text-sm text-slate-400">Process and validate healthcare allocations.</p>
+                        </div>
+                        {/* Users, Doctors, and Pathologists can file requests using their base employee profiles */}
+                        {sessionUser.isConfirmed && (
+                            <button onClick={() => setIsOpen(true)} class="bg-indigo-600 hover:bg-indigo-500 text-xs font-bold px-4 py-2.5 rounded-xl transition-all shadow-lg">➕ Open Diagnostic Order File</button>
                         )}
                     </div>
 
-                    {/* MODAL WINDOW FOR NEW FILING */}
-                    {isNewModalOpen && (
+                    {isOpen && (
                         <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-                            <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
-                                <div class="px-6 py-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
-                                    <h3 class="font-bold text-base">New Diagnostics Application Filing</h3>
-                                    <button onClick={() => setIsNewModalOpen(false)} class="text-slate-400 hover:text-white text-xs">✕ Close</button>
+                            <form onSubmit={handleSubmitRequest} class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-md p-6 space-y-4">
+                                <h3 class="font-bold text-sm tracking-tight text-slate-200">New Pathology Diagnostic Entry filing</h3>
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 mb-1">Target Profile Relationship Node</label>
+                                    <select value={relation} onChange={(e)=>setRelation(e.target.value)} class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs focus:outline-none focus:border-indigo-500">
+                                        <option value="Self">Self (Primary Staff Profile File)</option>
+                                        <option value="Spouse">Spouse</option>
+                                        <option value="Parents">Parent File</option>
+                                        <option value="Children">Child File</option>
+                                    </select>
                                 </div>
-                                <form onSubmit={handleCreateRequest} class="p-6 space-y-4">
+                                {relation !== 'Self' && (
                                     <div>
-                                        <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Relationship Framework</label>
-                                        <select 
-                                            value={relationship} 
-                                            onChange={(e) => setRelationship(e.target.value)}
-                                            class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                                        >
-                                            <option value="Self">Self (Primary Employee Profile)</option>
-                                            <option value="Spouse">Spouse</option>
-                                            <option value="Parents">Parent</option>
-                                            <option value="Children">Child</option>
-                                        </select>
+                                        <label class="block text-xs font-bold text-slate-400 mb-1">Dependent Legal Full Name</label>
+                                        <input type="text" required value={patientName} onChange={(e)=>setPatientName(e.target.value)} class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-xs focus:outline-none" />
                                     </div>
-
-                                    {relationship !== 'Self' && (
-                                        <div>
-                                            <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Dependent Family Member Name</label>
-                                            <input 
-                                                type="text" 
-                                                required
-                                                value={patientName}
-                                                onChange={(e) => setPatientName(e.target.value)}
-                                                placeholder="Enter Full Legal Name"
-                                                class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                                            />
-                                        </div>
-                                    )}
-
-                                    <div>
-                                        <label class="block text-xs font-bold uppercase text-slate-400 mb-1.5">Select Targeted Pathology Tests (Select Multiselect Checkbox Cluster)</label>
-                                        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
-                                            {testLibrary.map(t => (
-                                                <label key={t.id} class="flex items-center space-x-3 text-xs text-slate-300 cursor-pointer hover:text-white">
-                                                    <input 
-                                                        type="checkbox" 
-                                                        checked={selectedTests.includes(t.id)}
-                                                        onChange={() => handleToggleTestSelection(t.id)}
-                                                        class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0 focus:ring-offset-0"
-                                                    />
-                                                    <span>{t.name}</span>
-                                                </label>
-                                            ))}
-                                        </div>
+                                )}
+                                <div>
+                                    <label class="block text-xs font-bold text-slate-400 mb-1">Select Laboratory Assays</label>
+                                    <div class="bg-slate-950 border border-slate-800 rounded-lg p-2 max-h-32 overflow-y-auto space-y-1">
+                                        {testLibrary.map(t => (
+                                            <label key={t.id} class="flex items-center space-x-2 text-xs text-slate-300">
+                                                <input type="checkbox" checked={selectedTests.includes(t.id)} onChange={()=>handleToggleCheckbox(t.id)} class="rounded border-slate-700 bg-slate-900 text-indigo-600 focus:ring-0" />
+                                                <span>{t.name}</span>
+                                            </label>
+                                        ))}
                                     </div>
+                                </div>
+                                <div class="flex justify-end space-x-2 pt-2 border-t border-slate-800">
+                                    <button type="button" onClick={()=>setIsOpen(false)} class="bg-slate-800 px-3 py-1.5 rounded-lg text-xs">Close</button>
+                                    <button type="submit" class="bg-indigo-600 px-3 py-1.5 rounded-lg text-xs font-bold text-white">Inject Request Order</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
 
-                                    <div class="pt-4 border-t border-slate-800 flex justify-end space-x-2">
-                                        <button type="button" onClick={() => setIsNewModalOpen(false)} class="bg-slate-800 hover:bg-slate-700 text-xs font-bold px-4 py-2 rounded-lg">Cancel</button>
-                                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-xs font-bold px-4 py-2 rounded-lg text-white">Submit Into Network Pipeline</button>
-                                    </div>
-                                </form>
+                    {hrPreviewData && (
+                        <div class="bg-indigo-950/40 border border-indigo-500/30 p-4 rounded-xl relative space-y-2">
+                            <button onClick={()=>setHrPreviewData(null)} class="absolute top-2 right-3 text-xs text-indigo-400 font-bold hover:text-white">✕ Close Preview</button>
+                            <h4 class="text-xs font-bold uppercase tracking-widest text-indigo-400">⚡ HR Metrics Quick Look Pipeline Preview Module</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-2 text-center text-xs">
+                                <div class="bg-slate-950 p-2 rounded-lg"><p class="text-[10px] text-slate-400">Completed</p><p class="font-bold">{hrPreviewData.completed}</p></div>
+                                <div class="bg-slate-950 p-2 rounded-lg"><p class="text-[10px] text-slate-400">Approved</p><p class="font-bold">{hrPreviewData.approved}</p></div>
+                                <div class="bg-slate-950 p-2 rounded-lg"><p class="text-[10px] text-slate-400">Pending</p><p class="font-bold">{hrPreviewData.pending}</p></div>
+                                <div class="bg-slate-950 p-2 rounded-lg"><p class="text-[10px] text-slate-400">Total Structural Allocation</p><p class="font-bold text-amber-400">{hrPreviewData.totalUsed} / 5</p></div>
+                                <div class="bg-slate-950 p-2 rounded-lg"><p class="text-[10px] text-slate-400">Remaining Slots</p><p class="font-bold text-emerald-400">{hrPreviewData.remaining}</p></div>
                             </div>
                         </div>
                     )}
 
-                    {/* HR QUICK PREVIEW CARD DRAWER */}
-                    {previewMetrics && (
-                        <div class="bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 relative animate-fade-in">
-                            <button onClick={() => setPreviewMetrics(null)} class="absolute top-2 right-3 text-indigo-400 hover:text-white text-xs font-bold">✕ Close Preview</button>
-                            <h4 class="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-2">⚡ HR Context Fast Audit Preview Tracker</h4>
-                            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
-                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Completed</p><p class="text-lg font-bold text-slate-200">{previewMetrics.completed}</p></div>
-                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Approved Queue</p><p class="text-lg font-bold text-slate-200">{previewMetrics.approved}</p></div>
-                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Pending Review</p><p class="text-lg font-bold text-slate-200">{previewMetrics.pending}</p></div>
-                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Total Allocated Deductions</p><p class="text-lg font-bold text-amber-400">{previewMetrics.totalUsed} / 5</p></div>
-                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Remaining Scope</p><p class="text-lg font-bold text-emerald-400">{previewMetrics.remaining}</p></div>
-                            </div>
-                        </div>
-                    )}
-
-                    {/* INTERACTIVE WORKFLOW REGISTRY CARD COMPONENT LOOP */}
                     <div class="space-y-4">
-                        {visibleRequests.map((req) => {
-                            const metrics = getEmployeeMetrics(req.empId);
+                        {visibleRequests.map(req => {
+                            const m = getEmployeeMetrics(req.empId);
+                            const canMutate = (sessionUser.role === 'DOCTOR' && req.status === 'PENDING_DOC') || (sessionUser.role === 'PATHOLOGIST' && req.status === 'PENDING_PATHOLOGIST') || sessionUser.role === 'ADMIN';
                             return (
-                                <div key={req.id} class="bg-slate-950 border border-slate-800 rounded-xl p-5 shadow-md flex flex-col space-y-4">
-                                    <div class="flex flex-wrap items-start justify-between gap-2 border-b border-slate-900 pb-3">
+                                <div key={req.id} class="bg-slate-950 border border-slate-800 rounded-xl p-4 flex flex-col space-y-3">
+                                    <div class="flex items-start justify-between border-b border-slate-900 pb-2">
                                         <div>
-                                            <div class="flex items-center space-x-2">
-                                                <span class="text-xs font-mono font-bold text-indigo-400">{req.id}</span>
-                                                <span class="text-slate-600">•</span>
-                                                <h3 class="font-bold text-sm text-slate-100">{req.patientName}</h3>
-                                                <span class="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-slate-400">{req.relationship}</span>
-                                            </div>
-                                            <p class="text-xs text-slate-500 mt-0.5">Filing Employee ID Link: <span class="font-mono text-slate-400">{req.empId}</span> | Date: {req.date}</p>
+                                            <p class="text-xs font-mono font-bold text-indigo-400">{req.id} <span class="text-slate-600 font-sans font-normal">• Profile link: {req.empId}</span></p>
+                                            <h4 class="font-bold text-sm text-slate-200 mt-0.5">{req.patientName} <span class="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded border border-slate-800 text-slate-400 ml-1 font-sans">{req.relationship}</span></h4>
                                         </div>
                                         <div class="flex items-center space-x-2">
-                                            {currentRole === 'HR' && (
-                                                <button 
-                                                    onClick={() => setPreviewMetrics(metrics)}
-                                                    class="bg-indigo-900/40 text-indigo-400 border border-indigo-800/40 hover:bg-indigo-900 text-[11px] font-bold px-2.5 py-1 rounded"
-                                                >
-                                                    🔍 Quick Audit Look
+                                            {sessionUser.role === 'HR' && (
+                                                <button onClick={()=>setHrPreviewData(m)} class="bg-indigo-900/30 text-indigo-400 border border-indigo-900 px-2 py-0.5 rounded text-[11px] font-bold">🔍 Fast Audit Look</button>
+                                            )}
+                                            <span class="text-[10px] font-mono font-black tracking-widest uppercase bg-slate-900 px-2 py-1 rounded text-amber-500 border border-slate-800">{req.status}</span>
+                                        </div>
+                                    </div>
+
+                                    {/* CLUSTER MATRIX INTERACTIVE CHECKBOX FIELD */}
+                                    <div class="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-900/40 p-3 rounded-lg border border-slate-900">
+                                        {req.tests.map(t => (
+                                            <label key={t.id} class={`flex items-center space-x-2 text-xs p-1 rounded ${canMutate ? 'cursor-pointer hover:bg-slate-900' : ''}`}>
+                                                <input type="checkbox" disabled={!canMutate} checked={t.approved} onChange={()=>mutateTestCheckboxState(req.id, t.id)} class="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0" />
+                                                <span class={t.approved ? 'text-slate-200' : 'text-slate-500 line-through'}>{t.name}</span>
+                                            </label>
+                                        ))}
+                                    </div>
+
+                                    <div class="flex items-center justify-between pt-2 text-xs">
+                                        <span class="text-[11px] text-slate-500 truncate max-w-xs">Track: {req.historyLog[req.historyLog.length-1]}</span>
+                                        <div class="flex space-x-2">
+                                            {sessionUser.role === 'DOCTOR' && req.status === 'PENDING_DOC' && (
+                                                <button onClick={()=>advanceState(req.id, 'PENDING_HR', 'Doctor Validated Workflow')} class="bg-indigo-600 text-white font-bold px-2.5 py-1 rounded-md text-xs">Sign off Clinical Approval</button>
+                                            )}
+                                            {sessionUser.role === 'HR' && req.status === 'PENDING_HR' && (
+                                                <button disabled={m.totalUsed >= 5} onClick={()=>advanceState(req.id, 'PENDING_PATHOLOGIST', 'HR Budget Verification Approved')} class="bg-emerald-600 disabled:bg-slate-800 disabled:text-slate-500 text-white font-bold px-2.5 py-1 rounded-md text-xs">
+                                                    {m.totalUsed >= 5 ? "⚠️ Limit Lock Out" : "Confirm Budget & Allocation"}
                                                 </button>
                                             )}
-                                            <span class={`text-[10px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-md ${
-                                                req.status === 'COMPLETED' ? 'bg-emerald-950 text-emerald-400' :
-                                                req.status === 'PENDING_DOC' ? 'bg-indigo-950 text-indigo-400' :
-                                                req.status === 'PENDING_HR' ? 'bg-amber-950 text-amber-400' :
-                                                'bg-purple-950 text-purple-400'
-                                            }`}>
-                                                {req.status}
-                                            </span>
-                                        </div>
-                                    </div>
-
-                                    {/* INNER TESTS CHECKBOX LOOP MATRIX */}
-                                    <div>
-                                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Targeted Diagnostic Assay Profiles Checkbox Cluster</p>
-                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-900/50 p-3 rounded-lg border border-slate-900">
-                                            {req.tests.map((test) => {
-                                                const canMutate = (currentRole === 'DOCTOR' && req.status === 'PENDING_DOC') || (currentRole === 'PATHOLOGIST' && req.status === 'PENDING_PATHOLOGIST') || currentRole === 'ADMIN';
-                                                return (
-                                                    <label key={test.id} class={`flex items-center space-x-3 text-xs p-1.5 rounded transition-colors ${canMutate ? 'cursor-pointer hover:bg-slate-900' : ''}`}>
-                                                        <input 
-                                                            type="checkbox"
-                                                            disabled={!canMutate}
-                                                            checked={test.approved}
-                                                            onChange={() => toggleTestApprovalByDoctorOrPathologist(req.id, test.id)}
-                                                            class="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 disabled:opacity-60"
-                                                        />
-                                                        <span class={`font-medium ${test.approved ? 'text-slate-200' : 'text-slate-500 line-through'}`}>{test.name}</span>
-                                                    </label>
-                                                );
-                                            })}
-                                        </div>
-                                    </div>
-
-                                    {/* CONTEXTUAL ACTION DRIVERS LAYER */}
-                                    <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-900/60">
-                                        <div class="text-[11px] text-slate-500 max-w-md truncate">
-                                            <strong>Audit Track:</strong> {req.historyLog[req.historyLog.length - 1]}
-                                        </div>
-
-                                        <div class="flex items-center space-x-2">
-                                            {/* Doctor Action Set */}
-                                            {currentRole === 'DOCTOR' && req.status === 'PENDING_DOC' && (
-                                                <>
-                                                    <button onClick={() => advancePipelineStage(req.id, 'PENDING_DOC', 'REJECT')} class="bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-rose-900">Deny Medical Validation</button>
-                                                    <button onClick={() => advancePipelineStage(req.id, 'PENDING_DOC', 'APPROVE')} class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Validate & Sign Request</button>
-                                                </>
+                                            {sessionUser.role === 'ADMIN' && req.status === 'PENDING_HR' && m.totalUsed >= 5 && (
+                                                <button onClick={()=>advanceState(req.id, 'PENDING_PATHOLOGIST', 'Admin Budget Allocation Force Override')} class="bg-amber-600 text-white font-bold px-2.5 py-1 rounded-md text-xs">⚡ Admin Force Bypass Override</button>
                                             )}
-
-                                            {/* HR Action Set */}
-                                            {currentRole === 'HR' && req.status === 'PENDING_HR' && (
-                                                <>
-                                                    <button onClick={() => advancePipelineStage(req.id, 'PENDING_HR', 'REJECT')} class="bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-rose-900">Deny Request Allocation</button>
-                                                    <button 
-                                                        onClick={() => advancePipelineStage(req.id, 'PENDING_HR', 'APPROVE')} 
-                                                        disabled={metrics.totalUsed >= 5}
-                                                        class={`text-xs font-bold px-3 py-1.5 rounded-lg ${metrics.totalUsed >= 5 ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
-                                                    >
-                                                        {metrics.totalUsed >= 5 ? "⚠️ Limit Hit (Locked for Admin Override Only)" : "Confirm Budget & Pass"}
-                                                    </button>
-                                                </>
+                                            {(sessionUser.role === 'PATHOLOGIST' || sessionUser.role === 'ADMIN') && (
+                                                <button onClick={()=>triggerPrint(req)} class="bg-slate-800 border border-slate-700 text-slate-300 px-2.5 py-1 rounded-md text-xs">🖨️ Print Slip Layout</button>
                                             )}
-
-                                            {/* Admin Override Escape Hatch for HR Blocked States */}
-                                            {currentRole === 'ADMIN' && req.status === 'PENDING_HR' && metrics.totalUsed >= 5 && (
-                                                <button onClick={() => advancePipelineStage(req.id, 'PENDING_HR', 'APPROVE')} class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">⚡ Root Admin Force Approve Override</button>
-                                            )}
-
-                                            {/* Pathologist Action Set */}
-                                            {(currentRole === 'PATHOLOGIST' || currentRole === 'ADMIN') && (
-                                                <button onClick={() => triggerPrint(req)} class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1">🖨️ Print Slip Paperwork</button>
-                                            )}
-                                            {currentRole === 'PATHOLOGIST' && req.status === 'PENDING_PATHOLOGIST' && (
-                                                <button onClick={() => advancePipelineStage(req.id, 'PENDING_PATHOLOGIST', 'COMPLETE')} class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">✅ Complete Assay Logging</button>
+                                            {sessionUser.role === 'PATHOLOGIST' && req.status === 'PENDING_PATHOLOGIST' && (
+                                                <button onClick={()=>advanceState(req.id, 'COMPLETED', 'Pathology laboratory analysis logged complete')} class="bg-indigo-600 text-white font-bold px-2.5 py-1 rounded-md text-xs">Complete Lab Process</button>
                                             )}
                                         </div>
                                     </div>
                                 </div>
                             );
                         })}
-                        {visibleRequests.length === 0 && (
-                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-12 text-center text-slate-500 italic text-sm">No action queue requirements tracked for your current role workspace layout.</div>
-                        )}
                     </div>
                 </div>
             );
         }
 
-        // --- EMPLOYEES ROUTE VIEW ---
-        function EmployeesView({ employees, setEmployees, getEmployeeMetrics, triggerToast }) {
-            const [showBulkTemplate, setShowBulkTemplate] = React.useState(false);
-            const [bulkInputText, setBulkInputText] = React.useState('');
+        // --- VIEW COMPONENT 3: PERSONNEL & ROLE CONFIGURE SUITE ---
+        function EmployeesView({ employees, setEmployees, handleUpdateUserRole, getEmployeeMetrics, triggerToast }) {
+            const [bulkInput, setBulkInput] = React.useState('');
+            const [openUpload, setOpenUpload] = React.useState(false);
 
-            const handleToggleStatus = (empId) => {
-                setEmployees(employees.map(e => e.id === empId ? { ...e, isConfirmed: !e.isConfirmed } : e));
-                triggerToast("User account verification status mutated.");
-            };
-
-            const handleProcessBulkUpload = (e) => {
+            const handleBulkProcess = (e) => {
                 e.preventDefault();
-                if(!bulkInputText.trim()) return;
-
-                const lines = bulkInputText.trim().split('\n');
-                const newEmployeesParsed = [];
-
+                const lines = bulkInput.trim().split('\n');
+                const parsed = [];
                 lines.forEach(line => {
-                    const columns = line.split(',');
-                    if (columns.length >= 4) {
-                        newEmployeesParsed.push({
-                            id: columns[0].trim(),
-                            name: columns[1].trim(),
-                            email: columns[2].trim(),
-                            isConfirmed: columns[3].trim().toLowerCase() === 'true',
-                            role: (columns[4] || 'USER').trim().toUpperCase()
+                    const cols = line.split(',');
+                    if(cols.length >= 4) {
+                        parsed.push({
+                            id: cols[0].trim(), name: cols[1].trim(), email: cols[2].trim(),
+                            isConfirmed: cols[3].trim().toLowerCase() === 'true', role: (cols[4] || 'USER').trim().toUpperCase()
                         });
                     }
                 });
-
-                if(newEmployeesParsed.length > 0) {
-                    setEmployees([...employees, ...newEmployeesParsed]);
-                    setBulkInputText('');
-                    setShowBulkTemplate(false);
-                    triggerToast(`Successfully loaded ${newEmployeesParsed.length} new employees into memory runtime stack!`);
-                } else {
-                    alert("Parsing Error. Please strictly verify your string formatting matches the schema matrix rule layout.");
+                if(parsed.length > 0) {
+                    setEmployees([...employees, ...parsed]);
+                    setBulkInput('');
+                    setOpenUpload(false);
+                    triggerToast(`Successfully loaded ${parsed.length} employees into local application instance state.`);
                 }
             };
 
@@ -777,69 +520,60 @@
                     <div class="flex items-center justify-between">
                         <div>
                             <h2 class="text-2xl font-bold tracking-tight">Corporate Personnel Directory</h2>
-                            <p class="text-sm text-slate-400">Configure core workforce attributes and toggle framework rules permissions.</p>
+                            <p class="text-sm text-slate-400">Configure corporate verification rules and define granular user roles.</p>
                         </div>
-                        <button onClick={() => setShowBulkTemplate(!showBulkTemplate)} class="bg-indigo-600 hover:bg-indigo-500 text-xs font-bold px-3 py-2 rounded-xl transition-all shadow-md">📂 CSV Bulk Upload Tool</button>
+                        <button onClick={()=>setOpenUpload(!openUpload)} class="bg-indigo-600 hover:bg-indigo-500 text-xs font-bold px-3 py-2 rounded-xl">📂 Bulk Upload Plaintext Template</button>
                     </div>
 
-                    {/* BULK DATA SHEET PARSING DRAWER */}
-                    {showBulkTemplate && (
-                        <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4 animate-fade-in">
-                            <div class="bg-slate-900 p-3 rounded-lg border border-slate-800">
-                                <p class="text-xs font-bold uppercase tracking-wider text-amber-400 mb-1">📋 Comma-Separated Values (CSV) Schema Matrix Reference Format:</p>
-                                <code class="text-[11px] font-mono block text-slate-400 select-all">
-                                    EMP101,John Doe,john@corp.com,true,USER<br/>
-                                    EMP102,Jane Roe,jane@corp.com,false,DOCTOR
-                                </code>
-                            </div>
-                            <form onSubmit={handleProcessBulkUpload} class="space-y-3">
-                                <textarea 
-                                    rows="4"
-                                    value={bulkInputText}
-                                    onChange={(e) => setBulkInputText(e.target.value)}
-                                    placeholder="Paste clean plaintext dataset data matrix rows here..."
-                                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
-                                />
-                                <div class="flex justify-end space-x-2">
-                                    <button type="button" onClick={() => setShowBulkTemplate(false)} class="text-xs bg-slate-800 px-3 py-1.5 rounded-lg">Cancel</button>
-                                    <button type="submit" class="text-xs bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg font-bold text-white">Execute Inject Process Array</button>
-                                </div>
-                            </form>
-                        </div>
+                    {openUpload && (
+                        <form onSubmit={handleBulkProcess} class="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-3 animate-fade-in">
+                            <p class="text-xs font-mono text-slate-400">Format: EMP_ID,Name,Email,IsConfirmed(true/false),Role(ADMIN/USER/DOCTOR/HR/PATHOLOGIST)</p>
+                            <textarea value={bulkInput} onChange={(e)=>setBulkInput(e.target.value)} rows="3" placeholder="EMP999,Jane Doe,jane@corp.com,true,USER" class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 font-mono text-xs focus:outline-none focus:border-indigo-500" />
+                            <div class="flex justify-end space-x-2"><button type="submit" class="bg-emerald-600 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Inject Process Array</button></div>
+                        </form>
                     )}
 
-                    {/* PERSONNEL CONTROL TABLE SHEET */}
                     <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
                         <table class="w-full text-left border-collapse text-sm">
                             <thead>
-                                <tr class="border-b border-slate-800 text-xs text-slate-400 bg-slate-900/50">
+                                <tr class="bg-slate-900/60 border-b border-slate-800 text-xs text-slate-400 font-bold">
                                     <th class="p-3">Staff ID</th>
                                     <th class="p-3">Full Legal Name</th>
-                                    <th class="p-3">Email Network Address</th>
-                                    <th class="p-3">Default System Authority Role Token</th>
-                                    <th class="p-3 text-center">Facility Status Verification Lock</th>
+                                    <th class="p-3">Email Address</th>
+                                    <th class="p-3">Security Access Role Assignment</th>
+                                    <th class="p-3 text-center">Status Allocation Verification Lock</th>
                                 </tr>
                             </thead>
                             <tbody class="divide-y divide-slate-800">
-                                {employees.map(e => {
-                                    const usage = getEmployeeMetrics(e.id);
-                                    return (
-                                        <tr key={e.id} class="hover:bg-slate-900/40 transition-colors">
-                                            <td class="p-3 font-mono text-xs text-indigo-400 font-bold">{e.id}</td>
-                                            <td class="p-3 font-medium text-slate-200">{e.name}</td>
-                                            <td class="p-3 text-xs text-slate-400 font-mono">{e.email}</td>
-                                            <td class="p-3"><span class="text-[10px] bg-slate-900 text-indigo-400 font-mono border border-indigo-950 px-2 py-0.5 rounded">{e.role}</span></td>
-                                            <td class="p-3 text-center">
-                                                <button 
-                                                    onClick={() => handleToggleStatus(e.id)}
-                                                    class={`text-xs px-3 py-1 rounded-full font-semibold transition-all ${e.isConfirmed ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : 'bg-rose-950 text-rose-400 border border-rose-900'}`}
-                                                >
-                                                    {e.isConfirmed ? "Confirmed Staff (Unlocked)" : "Unconfirmed (Blocked)"}
-                                                </button>
-                                            </td>
-                                        </tr>
-                                    );
-                                })}
+                                {employees.map(emp => (
+                                    <tr key={emp.id} class="hover:bg-slate-900/30">
+                                        <td class="p-3 font-mono text-xs font-bold text-indigo-400">{emp.id}</td>
+                                        <td class="p-3 font-medium text-slate-200">{emp.name}</td>
+                                        <td class="p-3 text-xs text-slate-400 font-mono">{emp.email}</td>
+                                        
+                                        {/* - CRITICAL USER TASK INTERACTIVE UPGRADE: ADMIN DEFINED ROLE COMPONENT DIRECT SELECTOR SLOT - */}
+                                        <td class="p-3">
+                                            <select 
+                                                value={emp.role} 
+                                                onChange={(e) => handleUpdateUserRole(emp.id, e.target.value)}
+                                                class="bg-slate-900 border border-slate-700 rounded p-1 text-xs font-mono font-bold text-indigo-400 focus:outline-none focus:border-indigo-500 cursor-pointer"
+                                            >
+                                                {ROLES.map(roleOpt => (
+                                                    <option key={roleOpt} value={roleOpt}>{roleOpt}</option>
+                                                ))}
+                                            </select>
+                                        </td>
+
+                                        <td class="p-3 text-center">
+                                            <button 
+                                                onClick={() => setEmployees(employees.map(e => e.id === emp.id ? { ...e, isConfirmed: !e.isConfirmed } : e))}
+                                                class={`text-xs px-2.5 py-0.5 rounded-full font-bold border ${emp.isConfirmed ? 'bg-emerald-950/40 text-emerald-400 border-emerald-900' : 'bg-rose-950/40 text-rose-400 border-rose-900'}`}
+                                            >
+                                                {emp.isConfirmed ? "Confirmed Staff File" : "Non-Confirmed Block"}
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))}
                             </tbody>
                         </table>
                     </div>
@@ -847,90 +581,42 @@
             );
         }
 
-        // --- DIAGNOSTICS DIRECTORY VIEW ---
+        // --- VIEW COMPONENT 4: TEST DIRECTORY ---
         function LibraryView({ testLibrary, setTestLibrary, triggerToast }) {
-            const [newTestName, setNewTestName] = React.useState('');
-            const [newTestCost, setNewTestCost] = React.useState('');
+            const [name, setName] = React.useState('');
+            const [cost, setCost] = React.useState('');
 
-            const handleAddTestItem = (e) => {
+            const handleAdd = (e) => {
                 e.preventDefault();
-                if(!newTestName.trim() || !newTestCost) return;
-
-                const newAssay = {
-                    id: `T${testLibrary.length + 1}`,
-                    name: newTestName.trim(),
-                    cost: parseFloat(newTestCost)
-                };
-
-                setTestLibrary([...testLibrary, newAssay]);
-                setNewTestName('');
-                setNewTestCost('');
-                triggerToast(`Added ${newAssay.name} to the core directory!`);
+                setTestLibrary([...testLibrary, { id: `T${testLibrary.length+1}`, name, cost: parseFloat(cost) }]);
+                setName(''); setCost('');
+                triggerToast("New test profile added to library configuration directory state.");
             };
 
             return (
-                <div class="space-y-6">
-                    <div>
-                        <h2 class="text-2xl font-bold tracking-tight">Clinical Diagnostic Catalog</h2>
-                        <p class="text-sm text-slate-400">Manage and expand the global library catalog of allowable pathology tests.</p>
-                    </div>
-
-                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
-                        {/* LEFT FORM TO ADD ITEMS */}
-                        <form onSubmit={handleAddTestItem} class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
-                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Add New Lab Assay Definition</h3>
-                            <div>
-                                <label class="block text-xs text-slate-400 font-bold mb-1">Diagnostic Assay Name</label>
-                                <input 
-                                    type="text" 
-                                    required
-                                    value={newTestName}
-                                    onChange={(e) => setNewTestName(e.target.value)}
-                                    placeholder="e.g., Vitamin D3 Hydroxy"
-                                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                                />
-                            </div>
-                            <div>
-                                <label class="block text-xs text-slate-400 font-bold mb-1">Estimated Value Base Units Cost ($)</label>
-                                <input 
-                                    type="number" 
-                                    required
-                                    value={newTestCost}
-                                    onChange={(e) => setNewTestCost(e.target.value)}
-                                    placeholder="35"
-                                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
-                                />
-                            </div>
-                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white py-2 rounded-lg transition-all shadow-md">💾 Save Entry Definition</button>
-                        </form>
-
-                        {/* RIGHT DATA SHEET VIEW */}
-                        <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden lg:col-span-2">
-                            <table class="w-full text-left border-collapse text-sm">
-                                <thead>
-                                    <tr class="border-b border-slate-800 text-xs text-slate-400 bg-slate-900/50">
-                                        <th class="p-3">Assay Code</th>
-                                        <th class="p-3">Test Classification Name</th>
-                                        <th class="p-3 text-right">Corporate Unit Base Cost</th>
-                                    </tr>
-                                </thead>
-                                <tbody class="divide-y divide-slate-800">
-                                    {testLibrary.map(t => (
-                                        <tr key={t.id} class="hover:bg-slate-900/40 transition-colors">
-                                            <td class="p-3 font-mono text-xs text-indigo-400 font-bold">{t.id}</td>
-                                            <td class="p-3 font-medium text-slate-200">{t.name}</td>
-                                            <td class="p-3 text-right font-mono text-xs text-slate-300">${t.cost} USD</td>
-                                        </tr>
-                                    ))}
-                                </tbody>
-                            </table>
-                        </div>
+                <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <form onSubmit={handleAdd} class="bg-slate-950 border border-slate-800 p-4 rounded-xl space-y-3 h-fit">
+                        <h3 class="text-xs font-bold uppercase tracking-widest text-slate-400">Add New Lab Assay Configuration</h3>
+                        <div><label class="block text-xs text-slate-400 font-bold mb-1">Name</label><input type="text" required value={name} onChange={(e)=>setName(e.target.value)} class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs focus:outline-none" /></div>
+                        <div><label class="block text-xs text-slate-400 font-bold mb-1">Cost Base Standard ($)</label><input type="number" required value={cost} onChange={(e)=>setCost(e.target.value)} class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-xs focus:outline-none" /></div>
+                        <button type="submit" class="w-full bg-indigo-600 font-bold text-xs text-white py-2 rounded-lg">Save Definition Node</button>
+                    </form>
+                    <div class="bg-slate-950 border border-slate-800 rounded-xl overflow-hidden lg:col-span-2">
+                        <table class="w-full text-left border-collapse text-sm">
+                            <thead>
+                                <tr class="bg-slate-900/60 border-b border-slate-800 text-xs text-slate-400"><th class="p-3">Assay ID</th><th class="p-3">Diagnostic Label Description</th><th class="p-3 text-right">Standard Rate Valuation</th></tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800">
+                                {testLibrary.map(t => (
+                                    <tr key={t.id} class="hover:bg-slate-900/20"><td class="p-3 font-mono text-xs text-indigo-400 font-bold">{t.id}</td><td class="p-3 font-medium">{t.name}</td><td class="p-3 text-right font-mono text-xs text-slate-300">${t.cost} USD</td></tr>
+                                ))}
+                            </tbody>
+                        </table>
                     </div>
                 </div>
             );
         }
 
-        // --- APP ENGINE BOOT INITIALIZATION ---
         const root = ReactDOM.createRoot(document.getElementById('root'));
         root.render(<App />);
     </script>
