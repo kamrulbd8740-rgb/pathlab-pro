@@ -1,1707 +1,938 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
-import {
-  LayoutDashboard, Users as UsersIcon, FileText, FlaskConical, ClipboardList,
-  CheckCircle2, XCircle, Clock, Printer, Download, LogOut, Plus,
-  Search, Upload, AlertCircle, TrendingUp, Activity, UserCheck,
-  Stethoscope, Calendar, Eye, Trash2, Edit3, ChevronRight, ShieldCheck,
-  FilePlus2, Microscope, BarChart3, Lock, User as UserIcon, X, Check,
-  AlertTriangle, FileSpreadsheet, ArrowRight, Info, CheckSquare, Square
-} from 'lucide-react';
-import { BarChart, Bar, XAxis, YAxis, Tooltip, ResponsiveContainer, PieChart, Pie, Cell, LineChart, Line, Legend, CartesianGrid, Area, AreaChart } from 'recharts';
-
-/* ---------------- Storage Layer ---------------- */
-const K = { users: 'pl:users', emps: 'pl:emps', tests: 'pl:tests', reqs: 'pl:reqs', init: 'pl:init' };
-
-const dbGet = async (k, fb) => {
-  try { const r = await window.storage.get(k); return r ? JSON.parse(r.value) : fb; }
-  catch { return fb; }
-};
-const dbSet = async (k, v) => {
-  try { await window.storage.set(k, JSON.stringify(v)); return true; }
-  catch { return false; }
-};
-const uid = () => Math.random().toString(36).slice(2, 10);
-const today = () => new Date().toISOString().slice(0, 10);
-const now = () => new Date().toISOString();
-const yr = (d) => new Date(d).getFullYear();
-
-/* ---------------- Constants ---------------- */
-const ROLES = [
-  { id: 'admin', label: 'Admin', color: 'rose', icon: ShieldCheck },
-  { id: 'user', label: 'Employee', color: 'blue', icon: UserIcon },
-  { id: 'doctor', label: 'Doctor', color: 'emerald', icon: Stethoscope },
-  { id: 'hr', label: 'HR', color: 'amber', icon: UsersIcon },
-  { id: 'pathologist', label: 'Pathologist', color: 'violet', icon: Microscope }
-];
-const ANNUAL_LIMIT = 5;
-const RELATIONS = ['Self', 'Spouse', 'Father', 'Mother', 'Son', 'Daughter'];
-
-const STAGES = {
-  PENDING_DOCTOR: { label: 'Pending Doctor', color: 'amber', step: 1 },
-  DOCTOR_REJECTED: { label: 'Doctor Rejected', color: 'red', step: -1 },
-  PENDING_HR: { label: 'Pending HR', color: 'blue', step: 2 },
-  PENDING_HR_PARTIAL: { label: 'Pending HR (Partial)', color: 'orange', step: 2 },
-  HR_RESTRICTED: { label: 'Restricted (>5)', color: 'orange', step: 2.5 },
-  PENDING_ADMIN: { label: 'Pending Admin', color: 'rose', step: 3 },
-  ADMIN_REJECTED: { label: 'Admin Rejected', color: 'red', step: -1 },
-  PENDING_PATHOLOGY: { label: 'Pending Pathology', color: 'violet', step: 4 },
-  PATH_PARTIAL: { label: 'Partial Complete', color: 'teal', step: 4.5 },
-  COMPLETED: { label: 'Completed', color: 'emerald', step: 5 }
-};
-
-/* ---------------- Seed Data ---------------- */
-const seedData = async () => {
-  const inited = await dbGet(K.init, false);
-  if (inited) return;
-  await dbSet(K.users, [
-    { id: 'u1', username: 'admin', password: 'admin123', name: 'System Admin', role: 'admin', email: 'admin@org.com', empCode: null },
-    { id: 'u2', username: 'emp001', password: '1234', name: 'Rahim Khan', role: 'user', email: 'rahim@org.com', empCode: 'E001' },
-    { id: 'u3', username: 'drsara', password: '1234', name: 'Dr. Sara Ahmed', role: 'doctor', email: 'sara@org.com', empCode: 'E002' },
-    { id: 'u4', username: 'hrlead', password: '1234', name: 'Nadia Hossain', role: 'hr', email: 'nadia@org.com', empCode: 'E003' },
-    { id: 'u5', username: 'pathlab', password: '1234', name: 'Kamal Uddin', role: 'pathologist', email: 'kamal@org.com', empCode: 'E004' }
-  ]);
-  await dbSet(K.emps, [
-    { id: 'e1', empCode: 'E001', name: 'Rahim Khan', designation: 'Officer', department: 'Finance', status: 'confirmed', joinDate: '2022-03-15', contact: '01711000001' },
-    { id: 'e2', empCode: 'E002', name: 'Dr. Sara Ahmed', designation: 'Medical Officer', department: 'Medical', status: 'confirmed', joinDate: '2021-06-01', contact: '01711000002' },
-    { id: 'e3', empCode: 'E003', name: 'Nadia Hossain', designation: 'HR Manager', department: 'HR', status: 'confirmed', joinDate: '2020-01-10', contact: '01711000003' },
-    { id: 'e4', empCode: 'E004', name: 'Kamal Uddin', designation: 'Sr. Pathologist', department: 'Pathology', status: 'confirmed', joinDate: '2019-09-20', contact: '01711000004' },
-    { id: 'e5', empCode: 'E005', name: 'Ayesha Begum', designation: 'Nurse', department: 'Nursing', status: 'confirmed', joinDate: '2023-02-14', contact: '01711000005' },
-    { id: 'e6', empCode: 'E006', name: 'Tariq Aziz', designation: 'Junior Officer', department: 'Admin', status: 'non-confirmed', joinDate: '2025-08-01', contact: '01711000006' }
-  ]);
-  await dbSet(K.tests, [
-    { id: 't1', code: 'CBC', name: 'Complete Blood Count', category: 'Hematology', price: 500 },
-    { id: 't2', code: 'BG', name: 'Blood Glucose (Fasting)', category: 'Biochemistry', price: 200 },
-    { id: 't3', code: 'LFT', name: 'Liver Function Test', category: 'Biochemistry', price: 1200 },
-    { id: 't4', code: 'RFT', name: 'Renal Function Test', category: 'Biochemistry', price: 1100 },
-    { id: 't5', code: 'LIPID', name: 'Lipid Profile', category: 'Biochemistry', price: 1500 },
-    { id: 't6', code: 'TSH', name: 'Thyroid Stimulating Hormone', category: 'Endocrinology', price: 800 },
-    { id: 't7', code: 'URINE', name: 'Urine R/E', category: 'Clinical Pathology', price: 250 },
-    { id: 't8', code: 'HBA1C', name: 'HbA1c', category: 'Biochemistry', price: 900 },
-    { id: 't9', code: 'ECG', name: 'Electrocardiogram', category: 'Cardiology', price: 600 },
-    { id: 't10', code: 'XRAY', name: 'Chest X-Ray', category: 'Radiology', price: 700 }
-  ]);
-  await dbSet(K.reqs, []);
-  await dbSet(K.init, true);
-};
-
-/* ---------------- Privacy Filter ---------------- */
-const filterRequests = (requests, session) => {
-  if (session.role === 'admin') return requests; // Admin sees all
-  return requests.filter(r => r.requesterId === session.id); // Users only see their own
-};
-
-/* ---------------- Utility UI ---------------- */
-const Pill = ({ color = 'slate', children, sm }) => (
-  <span className={`inline-flex items-center gap-1 ${sm ? 'px-2 py-0.5 text-[10px]' : 'px-2.5 py-1 text-xs'} rounded-full font-medium bg-${color}-50 text-${color}-700 border border-${color}-200`}>
-    {children}
-  </span>
-);
-
-const StatusBadge = ({ status }) => {
-  const s = STAGES[status] || { label: status, color: 'slate' };
-  return <Pill color={s.color}>{s.label}</Pill>;
-};
-
-const Btn = ({ children, onClick, variant = 'primary', icon: Icon, size = 'md', disabled, type = 'button', className = '' }) => {
-  const variants = {
-    primary: 'bg-slate-900 text-white hover:bg-slate-800 disabled:bg-slate-300',
-    secondary: 'bg-white text-slate-700 border border-slate-200 hover:bg-slate-50',
-    success: 'bg-emerald-600 text-white hover:bg-emerald-700',
-    danger: 'bg-red-600 text-white hover:bg-red-700',
-    warning: 'bg-amber-500 text-white hover:bg-amber-600',
-    ghost: 'text-slate-600 hover:bg-slate-100'
-  };
-  const sizes = { sm: 'px-2.5 py-1.5 text-xs', md: 'px-4 py-2 text-sm', lg: 'px-5 py-2.5 text-sm' };
-  return (
-    <button type={type} disabled={disabled} onClick={onClick}
-      className={`inline-flex items-center gap-1.5 rounded-lg font-medium transition-all ${variants[variant]} ${sizes[size]} ${disabled ? 'opacity-50 cursor-not-allowed' : ''} ${className}`}>
-      {Icon && <Icon className={size === 'sm' ? 'w-3.5 h-3.5' : 'w-4 h-4'} />}
-      {children}
-    </button>
-  );
-};
-
-const Input = ({ label, ...props }) => (
-  <div>
-    {label && <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>}
-    <input {...props} className={`w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900 focus:border-transparent ${props.className || ''}`} />
-  </div>
-);
-
-const Select = ({ label, options, ...props }) => (
-  <div>
-    {label && <label className="block text-xs font-medium text-slate-600 mb-1.5">{label}</label>}
-    <select {...props} className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
-      {options.map(o => <option key={o.value} value={o.value}>{o.label}</option>)}
-    </select>
-  </div>
-);
-
-const Card = ({ children, className = '' }) => (
-  <div className={`bg-white border border-slate-200 rounded-xl ${className}`}>{children}</div>
-);
-
-const Modal = ({ open, onClose, title, children, size = 'md' }) => {
-  if (!open) return null;
-  const sizes = { sm: 'max-w-md', md: 'max-w-2xl', lg: 'max-w-4xl', xl: 'max-w-6xl' };
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm" onClick={onClose}>
-      <div className={`bg-white rounded-2xl shadow-2xl w-full ${sizes[size]} max-h-[90vh] overflow-hidden flex flex-col`} onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between p-5 border-b border-slate-100">
-          <h3 className="text-lg font-semibold text-slate-900">{title}</h3>
-          <button onClick={onClose} className="p-1 rounded-lg hover:bg-slate-100"><X className="w-5 h-5 text-slate-500" /></button>
-        </div>
-        <div className="p-5 overflow-y-auto">{children}</div>
-      </div>
-    </div>
-  );
-};
-
-const EmptyState = ({ icon: Icon = ClipboardList, title, sub }) => (
-  <div className="flex flex-col items-center justify-center py-16 text-center">
-    <div className="w-14 h-14 rounded-full bg-slate-100 flex items-center justify-center mb-3">
-      <Icon className="w-7 h-7 text-slate-400" />
-    </div>
-    <p className="font-medium text-slate-700">{title}</p>
-    {sub && <p className="text-sm text-slate-500 mt-1">{sub}</p>}
-  </div>
-);
-
-/* ---------------- LOGIN ---------------- */
-const Login = ({ onLogin }) => {
-  const [u, setU] = useState('');
-  const [p, setP] = useState('');
-  const [err, setErr] = useState('');
-
-  const submit = async () => {
-    const users = await dbGet(K.users, []);
-    const user = users.find(x => x.username === u && x.password === p);
-    if (user) onLogin(user);
-    else setErr('Invalid credentials');
-  };
-
-  return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-slate-50 via-blue-50 to-violet-50 p-4">
-      <div className="w-full max-w-md">
-        <div className="text-center mb-8">
-          <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-gradient-to-br from-slate-900 to-slate-700 mb-4 shadow-lg">
-            <FlaskConical className="w-8 h-8 text-white" />
-          </div>
-          <h1 className="text-3xl font-bold text-slate-900">PathLab Pro</h1>
-          <p className="text-slate-500 mt-1">Employee Pathology Benefit System</p>
-        </div>
-        <Card className="p-7 shadow-xl">
-          <div className="space-y-4">
-            <Input label="Username" value={u} onChange={e => setU(e.target.value)} placeholder="admin" onKeyDown={e => e.key === 'Enter' && submit()} />
-            <Input label="Password" type="password" value={p} onChange={e => setP(e.target.value)} placeholder="••••••••" onKeyDown={e => e.key === 'Enter' && submit()} />
-            {err && <div className="text-red-600 text-xs flex items-center gap-1.5"><AlertCircle className="w-3.5 h-3.5" />{err}</div>}
-            <Btn onClick={submit} className="w-full justify-center" size="lg">Sign In</Btn>
-          </div>
-          <div className="mt-6 pt-5 border-t border-slate-100">
-            <p className="text-xs text-slate-500 font-medium mb-2">Demo accounts:</p>
-            <div className="grid grid-cols-2 gap-1.5 text-[11px] text-slate-600">
-              <div><b>admin</b> / admin123</div>
-              <div><b>emp001</b> / 1234</div>
-              <div><b>drsara</b> / 1234</div>
-              <div><b>hrlead</b> / 1234</div>
-              <div><b>pathlab</b> / 1234</div>
-            </div>
-          </div>
-        </Card>
-      </div>
-    </div>
-  );
-};
-
-/* ---------------- DASHBOARD ---------------- */
-const Dashboard = ({ session, requests, employees, tests, users }) => {
-  const role = session.role;
-  const visible = filterRequests(requests, session);
-
-  const stats = useMemo(() => {
-    const thisYear = new Date().getFullYear();
-    const yReqs = visible.filter(r => yr(r.createdAt) === thisYear);
-    return {
-      total: visible.length,
-      pending: visible.filter(r => !['COMPLETED', 'DOCTOR_REJECTED', 'ADMIN_REJECTED'].includes(r.status)).length,
-      completed: visible.filter(r => r.status === 'COMPLETED').length,
-      thisYear: yReqs.length,
-      myCompleted: visible.filter(r => r.status === 'COMPLETED' && r.requesterId === session.id).length,
-      doctorQueue: role === 'doctor' || role === 'admin' ? requests.filter(r => r.status === 'PENDING_DOCTOR').length : 0,
-      hrQueue: role === 'hr' || role === 'admin' ? requests.filter(r => r.status === 'PENDING_HR' || r.status === 'PENDING_HR_PARTIAL').length : 0,
-      adminQueue: role === 'admin' ? requests.filter(r => r.status === 'HR_RESTRICTED' || r.status === 'PENDING_ADMIN').length : 0,
-      pathQueue: role === 'pathologist' || role === 'admin' ? requests.filter(r => r.status === 'PENDING_PATHOLOGY' || r.status === 'PATH_PARTIAL').length : 0
-    };
-  }, [visible, requests, session, role]);
-
-  const monthly = useMemo(() => {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const yReq = visible.filter(r => yr(r.createdAt) === new Date().getFullYear());
-    return months.map((m, i) => ({
-      m,
-      requests: yReq.filter(r => new Date(r.createdAt).getMonth() === i).length,
-      completed: yReq.filter(r => r.status === 'COMPLETED' && new Date(r.createdAt).getMonth() === i).length
-    }));
-  }, [visible]);
-
-  const cards = role === 'admin' ? [
-    { label: 'Total Requests', val: requests.length, icon: ClipboardList, color: 'blue' },
-    { label: 'Pending Actions', val: requests.filter(r => !['COMPLETED', 'DOCTOR_REJECTED', 'ADMIN_REJECTED'].includes(r.status)).length, icon: Clock, color: 'amber' },
-    { label: 'Completed', val: requests.filter(r => r.status === 'COMPLETED').length, icon: CheckCircle2, color: 'emerald' },
-    { label: 'Total Employees', val: employees.length, icon: UserCheck, color: 'violet' }
-  ] : role === 'doctor' ? [
-    { label: 'Pending Review', val: stats.doctorQueue, icon: Stethoscope, color: 'emerald' },
-    { label: 'My Requests', val: stats.total, icon: ClipboardList, color: 'blue' },
-    { label: 'My Completed', val: stats.myCompleted, icon: CheckCircle2, color: 'emerald' },
-    { label: 'My Remaining', val: Math.max(0, ANNUAL_LIMIT - stats.myCompleted), icon: Activity, color: 'amber' }
-  ] : role === 'hr' ? [
-    { label: 'Pending HR', val: stats.hrQueue, icon: UsersIcon, color: 'amber' },
-    { label: 'Restricted', val: stats.adminQueue, icon: AlertTriangle, color: 'orange' },
-    { label: 'Employees', val: employees.length, icon: UserCheck, color: 'blue' },
-    { label: 'Confirmed', val: employees.filter(e => e.status === 'confirmed').length, icon: ShieldCheck, color: 'emerald' }
-  ] : role === 'pathologist' ? [
-    { label: 'Pending Tests', val: stats.pathQueue, icon: Microscope, color: 'violet' },
-    { label: 'My Requests', val: stats.total, icon: ClipboardList, color: 'blue' },
-    { label: 'My Completed', val: stats.myCompleted, icon: CheckCircle2, color: 'emerald' },
-    { label: 'My Remaining', val: Math.max(0, ANNUAL_LIMIT - stats.myCompleted), icon: Activity, color: 'amber' }
-  ] : [
-    { label: 'My Requests', val: stats.total, icon: ClipboardList, color: 'blue' },
-    { label: 'Pending', val: stats.pending, icon: Clock, color: 'amber' },
-    { label: 'Completed', val: stats.completed, icon: CheckCircle2, color: 'emerald' },
-    { label: 'Remaining Quota', val: Math.max(0, ANNUAL_LIMIT - stats.myCompleted), icon: Activity, color: 'violet' }
-  ];
-
-  return (
-    <div className="space-y-6">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">Welcome, {session.name}</h2>
-        <p className="text-slate-500 text-sm mt-1">Here's an overview of the pathology benefit system</p>
-      </div>
-
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {cards.map((c, i) => (
-          <Card key={i} className="p-5">
-            <div className="flex items-start justify-between">
-              <div>
-                <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{c.label}</p>
-                <p className="text-3xl font-bold text-slate-900 mt-2">{c.val}</p>
-              </div>
-              <div className={`w-10 h-10 rounded-xl bg-${c.color}-50 flex items-center justify-center`}>
-                <c.icon className={`w-5 h-5 text-${c.color}-600`} />
-              </div>
-            </div>
-          </Card>
-        ))}
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-        <Card className="p-5">
-          <h3 className="font-semibold text-slate-900 mb-4">Monthly Activity — {new Date().getFullYear()}</h3>
-          <ResponsiveContainer width="100%" height={260}>
-            <AreaChart data={monthly}>
-              <CartesianGrid strokeDasharray="3 3" stroke="#f1f5f9" />
-              <XAxis dataKey="m" tick={{ fontSize: 11 }} />
-              <YAxis tick={{ fontSize: 11 }} />
-              <Tooltip />
-              <Area type="monotone" dataKey="requests" stroke="#3b82f6" fill="#3b82f6" fillOpacity={0.2} name="Requests" />
-              <Area type="monotone" dataKey="completed" stroke="#10b981" fill="#10b981" fillOpacity={0.2} name="Completed" />
-            </AreaChart>
-          </ResponsiveContainer>
-        </Card>
-        <Card className="p-5">
-          <h3 className="font-semibold text-slate-900 mb-4">Recent Requests</h3>
-          {visible.length === 0 ? <EmptyState title="No requests yet" /> : (
-            <div className="space-y-2 max-h-[260px] overflow-y-auto">
-              {visible.slice(-5).reverse().map(r => (
-                <div key={r.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg">
-                  <div className="flex-1 min-w-0">
-                    <p className="font-mono text-xs font-medium text-slate-900">{r.reqNo}</p>
-                    <p className="text-sm text-slate-600 truncate">{r.beneficiary.name} ({r.beneficiary.relation})</p>
-                    <p className="text-xs text-slate-500">{r.tests.length} test(s) · {r.createdAt.slice(0, 10)}</p>
-                  </div>
-                  <StatusBadge status={r.status} />
-                </div>
-              ))}
-            </div>
-          )}
-        </Card>
-      </div>
-    </div>
-  );
-};
-
-/* ---------------- EMPLOYEES ---------------- */
-const Employees = ({ employees, setEmployees, session }) => {
-  const [showAdd, setShowAdd] = useState(false);
-  const [showUpload, setShowUpload] = useState(false);
-  const [edit, setEdit] = useState(null);
-  const [q, setQ] = useState('');
-  const [statusFilter, setStatusFilter] = useState('all');
-  const fileRef = useRef();
-
-  const canEdit = ['admin', 'hr'].includes(session.role);
-
-  const filtered = employees.filter(e => {
-    const matchQ = !q || `${e.empCode} ${e.name} ${e.department}`.toLowerCase().includes(q.toLowerCase());
-    const matchS = statusFilter === 'all' || e.status === statusFilter;
-    return matchQ && matchS;
-  });
-
-  const save = async (data) => {
-    let next;
-    if (edit) next = employees.map(e => e.id === edit.id ? { ...edit, ...data } : e);
-    else next = [...employees, { id: uid(), ...data }];
-    await dbSet(K.emps, next);
-    setEmployees(next);
-    setShowAdd(false); setEdit(null);
-  };
-
-  const del = async (id) => {
-    if (!confirm('Delete this employee?')) return;
-    const next = employees.filter(e => e.id !== id);
-    await dbSet(K.emps, next);
-    setEmployees(next);
-  };
-
-  const toggleStatus = async (id) => {
-    const next = employees.map(e => e.id === id ? { ...e, status: e.status === 'confirmed' ? 'non-confirmed' : 'confirmed' } : e);
-    await dbSet(K.emps, next);
-    setEmployees(next);
-  };
-
-  const downloadTemplate = () => {
-    const csv = 'empCode,name,designation,department,status,joinDate,contact\nE101,John Doe,Officer,Finance,confirmed,2024-01-15,01700000000\nE102,Jane Smith,Executive,HR,non-confirmed,2025-06-01,01700000001';
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = 'employee_upload_template.csv'; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  const handleUpload = (e) => {
-    const file = e.target.files[0];
-    if (!file) return;
-    const reader = new FileReader();
-    reader.onload = async (ev) => {
-      try {
-        const text = ev.target.result;
-        const lines = text.split('\n').filter(l => l.trim());
-        const headers = lines[0].split(',').map(h => h.trim());
-        const rows = lines.slice(1).map(l => {
-          const vals = l.split(',').map(v => v.trim());
-          const obj = {};
-          headers.forEach((h, i) => obj[h] = vals[i] || '');
-          return { id: uid(), ...obj, status: obj.status || 'non-confirmed' };
-        });
-        const next = [...employees, ...rows];
-        await dbSet(K.emps, next);
-        setEmployees(next);
-        setShowUpload(false);
-        alert(`✓ Successfully imported ${rows.length} employees`);
-      } catch (err) { alert('Failed to parse CSV: ' + err.message); }
-    };
-    reader.readAsText(file);
-  };
-
-  const exportCSV = () => {
-    const headers = ['empCode', 'name', 'designation', 'department', 'status', 'joinDate', 'contact'];
-    const rows = filtered.map(e => [e.empCode, e.name, e.designation, e.department, e.status, e.joinDate, e.contact]);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `employees-${today()}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Employees</h2>
-          <p className="text-slate-500 text-sm mt-1">{employees.length} total · {employees.filter(e => e.status === 'confirmed').length} confirmed</p>
-        </div>
-        {canEdit && (
-          <div className="flex gap-2">
-            <Btn variant="secondary" icon={Download} onClick={exportCSV}>Export</Btn>
-            <Btn variant="secondary" icon={Upload} onClick={() => setShowUpload(true)}>Bulk Upload</Btn>
-            <Btn icon={Plus} onClick={() => { setEdit(null); setShowAdd(true); }}>Add Employee</Btn>
-          </div>
-        )}
-      </div>
-
-      <Card className="p-4">
-        <div className="flex gap-3 mb-4">
-          <div className="flex-1 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search code, name, department..." className="w-full pl-10 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
-          </div>
-          <Select value={statusFilter} onChange={e => setStatusFilter(e.target.value)} options={[
-            { value: 'all', label: 'All Status' },
-            { value: 'confirmed', label: 'Confirmed' },
-            { value: 'non-confirmed', label: 'Non-Confirmed' }
-          ]} />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
-                <th className="pb-3 font-medium">Code</th>
-                <th className="pb-3 font-medium">Name</th>
-                <th className="pb-3 font-medium">Designation</th>
-                <th className="pb-3 font-medium">Department</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium">Join Date</th>
-                {canEdit && <th className="pb-3 font-medium text-right">Actions</th>}
-              </tr>
-            </thead>
-            <tbody>
-              {filtered.map(e => (
-                <tr key={e.id} className="border-b border-slate-50 hover:bg-slate-50">
-                  <td className="py-3 font-mono text-xs">{e.empCode}</td>
-                  <td className="py-3 font-medium">{e.name}</td>
-                  <td className="py-3 text-slate-600">{e.designation}</td>
-                  <td className="py-3 text-slate-600">{e.department}</td>
-                  <td className="py-3">
-                    {canEdit ? (
-                      <button onClick={() => toggleStatus(e.id)}>
-                        <Pill color={e.status === 'confirmed' ? 'emerald' : 'slate'}>
-                          {e.status === 'confirmed' ? <Check className="w-3 h-3" /> : <Clock className="w-3 h-3" />}
-                          {e.status}
-                        </Pill>
-                      </button>
-                    ) : (
-                      <Pill color={e.status === 'confirmed' ? 'emerald' : 'slate'}>{e.status}</Pill>
-                    )}
-                  </td>
-                  <td className="py-3 text-slate-500">{e.joinDate}</td>
-                  {canEdit && (
-                    <td className="py-3 text-right">
-                      <button onClick={() => { setEdit(e); setShowAdd(true); }} className="p-1.5 hover:bg-slate-100 rounded"><Edit3 className="w-4 h-4 text-slate-500" /></button>
-                      <button onClick={() => del(e.id)} className="p-1.5 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4 text-red-500" /></button>
-                    </td>
-                  )}
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {filtered.length === 0 && <EmptyState icon={UsersIcon} title="No employees found" />}
-        </div>
-      </Card>
-
-      <Modal open={showAdd} onClose={() => { setShowAdd(false); setEdit(null); }} title={edit ? 'Edit Employee' : 'Add Employee'}>
-        <EmpForm initial={edit} onSave={save} onCancel={() => { setShowAdd(false); setEdit(null); }} />
-      </Modal>
-
-      <Modal open={showUpload} onClose={() => setShowUpload(false)} title="Bulk Upload Employees">
-        <div className="space-y-4">
-          <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
-            <div className="flex items-start gap-3">
-              <FileSpreadsheet className="w-5 h-5 text-blue-600 mt-0.5" />
-              <div className="flex-1">
-                <p className="font-medium text-slate-900 text-sm">CSV Upload Template</p>
-                <p className="text-xs text-slate-600 mt-1">Required columns: <code className="bg-white px-1.5 py-0.5 rounded text-[11px]">empCode, name, designation, department, status, joinDate, contact</code></p>
-                <Btn variant="secondary" size="sm" icon={Download} onClick={downloadTemplate} className="mt-2">Download Template</Btn>
-              </div>
-            </div>
-          </div>
-          <input ref={fileRef} type="file" accept=".csv" onChange={handleUpload} className="hidden" />
-          <div className="border-2 border-dashed border-slate-200 rounded-xl p-10 text-center cursor-pointer hover:border-slate-300 hover:bg-slate-50" onClick={() => fileRef.current?.click()}>
-            <Upload className="w-10 h-10 text-slate-400 mx-auto mb-2" />
-            <p className="font-medium text-slate-700 text-sm">Click to upload CSV file</p>
-            <p className="text-xs text-slate-500 mt-1">or drag and drop</p>
-          </div>
-        </div>
-      </Modal>
-    </div>
-  );
-};
-
-const EmpForm = ({ initial, onSave, onCancel }) => {
-  const [f, setF] = useState(initial || { empCode: '', name: '', designation: '', department: '', status: 'non-confirmed', joinDate: today(), contact: '' });
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <Input label="Employee Code *" value={f.empCode} onChange={e => setF({ ...f, empCode: e.target.value })} />
-        <Input label="Full Name *" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-        <Input label="Designation" value={f.designation} onChange={e => setF({ ...f, designation: e.target.value })} />
-        <Input label="Department" value={f.department} onChange={e => setF({ ...f, department: e.target.value })} />
-        <Select label="Status *" value={f.status} onChange={e => setF({ ...f, status: e.target.value })} options={[
-          { value: 'confirmed', label: 'Confirmed' },
-          { value: 'non-confirmed', label: 'Non-Confirmed' }
-        ]} />
-        <Input label="Join Date" type="date" value={f.joinDate} onChange={e => setF({ ...f, joinDate: e.target.value })} />
-        <Input label="Contact" value={f.contact} onChange={e => setF({ ...f, contact: e.target.value })} />
-      </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <Btn variant="secondary" onClick={onCancel}>Cancel</Btn>
-        <Btn onClick={() => onSave(f)} disabled={!f.empCode || !f.name}>Save Employee</Btn>
-      </div>
-    </div>
-  );
-};
-
-/* ---------------- TEST LIBRARY ---------------- */
-const TestLibrary = ({ tests, setTests, session }) => {
-  const [show, setShow] = useState(false);
-  const [edit, setEdit] = useState(null);
-  const [q, setQ] = useState('');
-
-  const canEdit = ['admin', 'pathologist'].includes(session.role);
-  const filtered = tests.filter(t => !q || `${t.code} ${t.name} ${t.category}`.toLowerCase().includes(q.toLowerCase()));
-
-  const save = async (data) => {
-    let next;
-    if (edit) next = tests.map(t => t.id === edit.id ? { ...edit, ...data, price: +data.price } : t);
-    else next = [...tests, { id: uid(), ...data, price: +data.price }];
-    await dbSet(K.tests, next);
-    setTests(next);
-    setShow(false); setEdit(null);
-  };
-
-  const del = async (id) => {
-    if (!confirm('Delete this test?')) return;
-    const next = tests.filter(t => t.id !== id);
-    await dbSet(K.tests, next);
-    setTests(next);
-  };
-
-  const exportCSV = () => {
-    const headers = ['code', 'name', 'category', 'price'];
-    const rows = filtered.map(t => [t.code, t.name, t.category, t.price]);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `test-library-${today()}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Test Library</h2>
-          <p className="text-slate-500 text-sm mt-1">{tests.length} pathology tests available</p>
-        </div>
-        <div className="flex gap-2">
-          <Btn variant="secondary" icon={Download} onClick={exportCSV}>Export</Btn>
-          {canEdit && <Btn icon={Plus} onClick={() => { setEdit(null); setShow(true); }}>Add Test</Btn>}
-        </div>
-      </div>
-
-      <Card className="p-4">
-        <div className="relative mb-4">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search tests..." className="w-full pl-10 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
-        </div>
-
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map(t => (
-            <div key={t.id} className="border border-slate-200 rounded-xl p-4 hover:border-slate-300 hover:shadow-sm transition-all">
-              <div className="flex items-start justify-between mb-2">
-                <Pill color="blue" sm>{t.code}</Pill>
-                {canEdit && (
-                  <div className="flex gap-1">
-                    <button onClick={() => { setEdit(t); setShow(true); }} className="p-1 hover:bg-slate-100 rounded"><Edit3 className="w-3.5 h-3.5 text-slate-400" /></button>
-                    <button onClick={() => del(t.id)} className="p-1 hover:bg-red-50 rounded"><Trash2 className="w-3.5 h-3.5 text-red-400" /></button>
-                  </div>
-                )}
-              </div>
-              <p className="font-semibold text-slate-900 text-sm">{t.name}</p>
-              <p className="text-xs text-slate-500 mt-1">{t.category}</p>
-              <p className="text-lg font-bold text-slate-900 mt-3">৳ {t.price}</p>
-            </div>
-          ))}
-        </div>
-        {filtered.length === 0 && <EmptyState icon={FlaskConical} title="No tests found" />}
-      </Card>
-
-      <Modal open={show} onClose={() => { setShow(false); setEdit(null); }} title={edit ? 'Edit Test' : 'Add Test'} size="sm">
-        <TestForm initial={edit} onSave={save} onCancel={() => { setShow(false); setEdit(null); }} />
-      </Modal>
-    </div>
-  );
-};
-
-const TestForm = ({ initial, onSave, onCancel }) => {
-  const [f, setF] = useState(initial || { code: '', name: '', category: '', price: 0 });
-  return (
-    <div className="space-y-4">
-      <Input label="Test Code *" value={f.code} onChange={e => setF({ ...f, code: e.target.value })} />
-      <Input label="Test Name *" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-      <Input label="Category" value={f.category} onChange={e => setF({ ...f, category: e.target.value })} />
-      <Input label="Price (৳)" type="number" value={f.price} onChange={e => setF({ ...f, price: e.target.value })} />
-      <div className="flex justify-end gap-2 pt-2">
-        <Btn variant="secondary" onClick={onCancel}>Cancel</Btn>
-        <Btn onClick={() => onSave(f)} disabled={!f.code || !f.name}>Save Test</Btn>
-      </div>
-    </div>
-  );
-};
-
-/* ---------------- NEW REQUEST ---------------- */
-const NewRequest = ({ session, employees, tests, requests, setRequests, onDone }) => {
-  const [emp, setEmp] = useState(null);
-  const [relation, setRelation] = useState('Self');
-  const [benName, setBenName] = useState('');
-  const [benAge, setBenAge] = useState('');
-  const [selTests, setSelTests] = useState([]);
-  const [notes, setNotes] = useState('');
-  const [q, setQ] = useState('');
-  const [error, setError] = useState('');
-
-  useEffect(() => {
-    if (session.empCode) {
-      const found = employees.find(e => e.empCode === session.empCode);
-      if (found) setEmp(found);
-    }
-  }, [session, employees]);
-
-  useEffect(() => {
-    if (relation === 'Self' && emp) setBenName(emp.name);
-    else if (relation !== 'Self') setBenName('');
-  }, [relation, emp]);
-
-  const usage = useMemo(() => {
-    if (!emp) return 0;
-    const myReqs = filterRequests(requests, session);
-    return myReqs.filter(r => r.employeeId === emp.id && yr(r.createdAt) === new Date().getFullYear() && r.status === 'COMPLETED').length;
-  }, [emp, requests, session]);
-
-  const filteredTests = tests.filter(t => !q || `${t.code} ${t.name} ${t.category}`.toLowerCase().includes(q.toLowerCase()));
-  const totalCost = selTests.reduce((s, id) => s + (tests.find(t => t.id === id)?.price || 0), 0);
-
-  const submit = async () => {
-    setError('');
-    if (!emp) return setError('Please select an employee');
-    if (emp.status !== 'confirmed') return setError('Only confirmed employees can avail this benefit');
-    if (!benName) return setError('Please enter beneficiary name');
-    if (selTests.length === 0) return setError('Please select at least one test');
-
-    const newReq = {
-      id: uid(),
-      reqNo: `REQ-${Date.now().toString().slice(-8)}`,
-      requesterId: session.id,
-      requesterName: session.name,
-      requesterRole: session.role,
-      employeeId: emp.id,
-      employeeCode: emp.empCode,
-      employeeName: emp.name,
-      beneficiary: { relation, name: benName, age: benAge },
-      tests: selTests,
-      approvedTests: selTests, // Initially all tests approved
-      rejectedTests: [],
-      notes,
-      status: 'PENDING_DOCTOR',
-      createdAt: now(),
-      timeline: [{ stage: 'CREATED', by: session.name, at: now(), note: 'Request submitted' }]
-    };
-    const next = [...requests, newReq];
-    await dbSet(K.reqs, next);
-    setRequests(next);
-    onDone();
-  };
-
-  return (
-    <div className="space-y-5">
-      <div>
-        <h2 className="text-2xl font-bold text-slate-900">New Test Request</h2>
-        <p className="text-slate-500 text-sm mt-1">Create a pathology test request</p>
-      </div>
-
-      <Card className="p-5">
-        <h3 className="font-semibold text-slate-900 mb-4">1. Select Employee</h3>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-          <div>
-            <label className="block text-xs font-medium text-slate-600 mb-1.5">Confirmed Employee *</label>
-            <select value={emp?.id || ''} onChange={e => setEmp(employees.find(x => x.id === e.target.value))} className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900">
-              <option value="">-- Select Employee --</option>
-              {employees.filter(e => e.status === 'confirmed').map(e => (
-                <option key={e.id} value={e.id}>{e.empCode} — {e.name}</option>
-              ))}
-            </select>
-          </div>
-          {emp && (
-            <div className="bg-slate-50 rounded-lg p-3">
-              <p className="text-xs text-slate-500">Department / Designation</p>
-              <p className="font-medium text-slate-900 text-sm">{emp.department} · {emp.designation}</p>
-              <div className="flex items-center gap-2 mt-2">
-                <Pill color={emp.status === 'confirmed' ? 'emerald' : 'red'} sm>{emp.status}</Pill>
-                <Pill color={usage >= ANNUAL_LIMIT ? 'red' : usage >= 4 ? 'amber' : 'emerald'} sm>
-                  Used: {usage}/{ANNUAL_LIMIT} this year
-                </Pill>
-              </div>
-            </div>
-          )}
-        </div>
-        {emp && usage >= ANNUAL_LIMIT && (
-          <div className="mt-4 bg-orange-50 border border-orange-200 rounded-lg p-3 flex gap-2.5">
-            <AlertTriangle className="w-5 h-5 text-orange-600 shrink-0" />
-            <div className="text-sm">
-              <p className="font-medium text-orange-900">Annual limit reached</p>
-              <p className="text-orange-700 text-xs mt-0.5">This employee has used all {ANNUAL_LIMIT} free tests for {new Date().getFullYear()}. HR will mark this as restricted; only Admin can approve additional requests.</p>
-            </div>
-          </div>
-        )}
-      </Card>
-
-      <Card className="p-5">
-        <h3 className="font-semibold text-slate-900 mb-4">2. Beneficiary Details</h3>
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-          <Select label="Relation *" value={relation} onChange={e => setRelation(e.target.value)} options={RELATIONS.map(r => ({ value: r, label: r }))} />
-          <Input label="Patient Name *" value={benName} onChange={e => setBenName(e.target.value)} disabled={relation === 'Self'} />
-          <Input label="Age" value={benAge} onChange={e => setBenAge(e.target.value)} type="number" />
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <div className="flex items-center justify-between mb-4">
-          <h3 className="font-semibold text-slate-900">3. Select Tests</h3>
-          <Pill color="blue">{selTests.length} selected · ৳ {totalCost}</Pill>
-        </div>
-        <div className="relative mb-3">
-          <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-          <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search tests..." className="w-full pl-10 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-2 max-h-80 overflow-y-auto">
-          {filteredTests.map(t => {
-            const sel = selTests.includes(t.id);
-            return (
-              <label key={t.id} className={`flex items-center gap-3 p-3 border rounded-lg cursor-pointer transition-all ${sel ? 'border-slate-900 bg-slate-50' : 'border-slate-200 hover:border-slate-300'}`}>
-                <input type="checkbox" checked={sel} onChange={() => setSelTests(sel ? selTests.filter(x => x !== t.id) : [...selTests, t.id])} className="w-4 h-4 rounded accent-slate-900" />
-                <div className="flex-1 min-w-0">
-                  <p className="font-medium text-slate-900 text-sm truncate">{t.name}</p>
-                  <p className="text-xs text-slate-500">{t.code} · {t.category}</p>
-                </div>
-                <span className="text-sm font-medium text-slate-700">৳{t.price}</span>
-              </label>
-            );
-          })}
-        </div>
-      </Card>
-
-      <Card className="p-5">
-        <h3 className="font-semibold text-slate-900 mb-4">4. Additional Notes</h3>
-        <textarea value={notes} onChange={e => setNotes(e.target.value)} rows="3" placeholder="Symptoms, doctor's advice, special instructions..." className="w-full px-3 py-2 text-sm bg-white border border-slate-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-slate-900" />
-      </Card>
-
-      {error && <div className="bg-red-50 border border-red-200 rounded-lg p-3 text-sm text-red-700 flex items-center gap-2"><AlertCircle className="w-4 h-4" />{error}</div>}
-
-      <div className="flex justify-end gap-2">
-        <Btn variant="secondary" onClick={onDone}>Cancel</Btn>
-        <Btn icon={FilePlus2} onClick={submit} size="lg">Submit Request</Btn>
-      </div>
-    </div>
-  );
-};
-
-/* ---------------- HR QUICK PREVIEW ---------------- */
-const HRPreview = ({ empId, requests, tests }) => {
-  const empReqs = requests.filter(r => r.employeeId === empId);
-  const thisYear = new Date().getFullYear();
-  const yearReqs = empReqs.filter(r => yr(r.createdAt) === thisYear);
-  const completed = yearReqs.filter(r => r.status === 'COMPLETED').length;
-  const pending = yearReqs.filter(r => !['COMPLETED', 'DOCTOR_REJECTED', 'ADMIN_REJECTED'].includes(r.status)).length;
-  const remaining = Math.max(0, ANNUAL_LIMIT - completed);
-
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-4 gap-3">
-        <Card className="p-3 text-center">
-          <p className="text-2xl font-bold text-blue-600">{yearReqs.length}</p>
-          <p className="text-xs text-slate-500 mt-1">Total {thisYear}</p>
-        </Card>
-        <Card className="p-3 text-center">
-          <p className="text-2xl font-bold text-emerald-600">{completed}</p>
-          <p className="text-xs text-slate-500 mt-1">Completed</p>
-        </Card>
-        <Card className="p-3 text-center">
-          <p className="text-2xl font-bold text-amber-600">{pending}</p>
-          <p className="text-xs text-slate-500 mt-1">Pending</p>
-        </Card>
-        <Card className="p-3 text-center">
-          <p className={`text-2xl font-bold ${remaining === 0 ? 'text-red-600' : 'text-violet-600'}`}>{remaining}</p>
-          <p className="text-xs text-slate-500 mt-1">Remaining</p>
-        </Card>
-      </div>
-
-      {yearReqs.length > 0 && (
-        <Card className="p-3">
-          <p className="text-xs font-medium text-slate-500 uppercase mb-2">Request History ({thisYear})</p>
-          <div className="space-y-1.5 max-h-40 overflow-y-auto">
-            {yearReqs.slice(-10).reverse().map(r => (
-              <div key={r.id} className="flex items-center justify-between text-xs py-1.5 px-2 bg-slate-50 rounded">
-                <span className="font-mono font-medium">{r.reqNo}</span>
-                <span className="text-slate-600">{r.beneficiary.name} · {r.tests.length} test(s)</span>
-                <StatusBadge status={r.status} />
-              </div>
-            ))}
-          </div>
-        </Card>
-      )}
-    </div>
-  );
-};
-
-/* ---------------- REQUESTS LIST + DETAIL ---------------- */
-const RequestsList = ({ requests, setRequests, tests, employees, users, session, mode = 'all' }) => {
-  const [active, setActive] = useState(null);
-  const [q, setQ] = useState('');
-  const [filter, setFilter] = useState('all');
-
-  const visible = useMemo(() => {
-    let list = mode === 'all' && session.role === 'admin' ? requests : filterRequests(requests, session);
-    if (mode === 'doctor') list = requests.filter(r => r.status === 'PENDING_DOCTOR');
-    else if (mode === 'hr') list = requests.filter(r => r.status === 'PENDING_HR' || r.status === 'PENDING_HR_PARTIAL');
-    else if (mode === 'admin') list = requests.filter(r => r.status === 'HR_RESTRICTED' || r.status === 'PENDING_ADMIN');
-    else if (mode === 'pathology') list = requests.filter(r => r.status === 'PENDING_PATHOLOGY' || r.status === 'PATH_PARTIAL');
-    if (filter !== 'all') list = list.filter(r => r.status === filter);
-    if (q) list = list.filter(r => `${r.reqNo} ${r.beneficiary.name} ${r.employeeName}`.toLowerCase().includes(q.toLowerCase()));
-    return list.reverse();
-  }, [requests, mode, filter, q, session]);
-
-  const titles = {
-    all: 'All Requests', mine: 'My Requests', doctor: 'Doctor Queue',
-    hr: 'HR Queue', admin: 'Admin Approval (Restricted)', pathology: 'Pathology Queue'
-  };
-
-  const exportCSV = () => {
-    const headers = ['Req No', 'Date', 'Employee', 'Patient', 'Relation', 'Tests', 'Status', 'Requested By'];
-    const rows = visible.map(r => [
-      r.reqNo, r.createdAt.slice(0, 10), r.employeeName, r.beneficiary.name,
-      r.beneficiary.relation, r.tests.map(id => tests.find(t => t.id === id)?.name).join('; '),
-      STAGES[r.status]?.label || r.status, r.requesterName
-    ]);
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `requests-${mode}-${today()}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
-
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">{titles[mode] || 'Requests'}</h2>
-          <p className="text-slate-500 text-sm mt-1">{visible.length} request(s)</p>
-        </div>
-        <Btn variant="secondary" icon={Download} onClick={exportCSV}>Export CSV</Btn>
-      </div>
-
-      <Card className="p-4">
-        <div className="flex gap-3 mb-4">
-          <div className="flex-1 relative">
-            <Search className="w-4 h-4 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
-            <input value={q} onChange={e => setQ(e.target.value)} placeholder="Search by req no, patient, employee..." className="w-full pl-10 pr-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900" />
-          </div>
-          <Select value={filter} onChange={e => setFilter(e.target.value)} options={[
-            { value: 'all', label: 'All Status' },
-            ...Object.keys(STAGES).map(s => ({ value: s, label: STAGES[s].label }))
-          ]} />
-        </div>
-
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
-                <th className="pb-3 font-medium">Req No</th>
-                <th className="pb-3 font-medium">Date</th>
-                <th className="pb-3 font-medium">Employee</th>
-                <th className="pb-3 font-medium">Patient</th>
-                <th className="pb-3 font-medium">Tests</th>
-                <th className="pb-3 font-medium">Status</th>
-                <th className="pb-3 font-medium text-right"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {visible.map(r => (
-                <tr key={r.id} className="border-b border-slate-50 hover:bg-slate-50 cursor-pointer" onClick={() => setActive(r)}>
-                  <td className="py-3 font-mono text-xs font-medium text-slate-900">{r.reqNo}</td>
-                  <td className="py-3 text-slate-500">{r.createdAt.slice(0, 10)}</td>
-                  <td className="py-3"><div className="font-medium">{r.employeeName}</div><div className="text-xs text-slate-500">{r.employeeCode}</div></td>
-                  <td className="py-3"><div>{r.beneficiary.name}</div><div className="text-xs text-slate-500">{r.beneficiary.relation}</div></td>
-                  <td className="py-3 text-slate-600">{r.approvedTests?.length || r.tests.length} / {r.tests.length} test(s)</td>
-                  <td className="py-3"><StatusBadge status={r.status} /></td>
-                  <td className="py-3 text-right"><ChevronRight className="w-4 h-4 text-slate-400 inline" /></td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-          {visible.length === 0 && <EmptyState title="No requests found" sub="Requests will appear here when created" />}
-        </div>
-      </Card>
-
-      {active && <RequestDetail req={active} onClose={() => setActive(null)} requests={requests} setRequests={setRequests} tests={tests} employees={employees} session={session} />}
-    </div>
-  );
-};
-
-/* ---------------- REQUEST DETAIL + PARTIAL APPROVAL ---------------- */
-const RequestDetail = ({ req, onClose, requests, setRequests, tests, session, employees }) => {
-  const [note, setNote] = useState('');
-  const [selectedTests, setSelectedTests] = useState(req.approvedTests || req.tests);
-  const [showHRPreview, setShowHRPreview] = useState(false);
-  
-  const reqTests = tests.filter(t => req.tests.includes(t.id));
-  const totalCost = reqTests.filter(t => selectedTests.includes(t.id)).reduce((s, t) => s + t.price, 0);
-
-  const updateStatus = async (newStatus, stage, noteText, partialTests = null) => {
-    const updated = {
-      ...req,
-      status: newStatus,
-      approvedTests: partialTests || selectedTests,
-      rejectedTests: req.tests.filter(tid => !(partialTests || selectedTests).includes(tid)),
-      timeline: [...(req.timeline || []), { stage, by: session.name, at: now(), note: noteText || '' }],
-      [`${stage.toLowerCase()}At`]: now(),
-      [`${stage.toLowerCase()}By`]: session.name
-    };
-    if (newStatus === 'COMPLETED') {
-      updated.completedAt = now();
-      updated.slipNo = `SLP-${Date.now().toString().slice(-8)}`;
-    }
-    const next = requests.map(r => r.id === req.id ? updated : r);
-    await dbSet(K.reqs, next);
-    setRequests(next);
-    onClose();
-  };
-
-  const handleDoctorAction = (approve) => {
-    if (approve) {
-      if (selectedTests.length === req.tests.length) {
-        updateStatus('PENDING_HR', 'DOCTOR_APPROVED', note || 'All tests approved by doctor', selectedTests);
-      } else if (selectedTests.length > 0) {
-        updateStatus('PENDING_HR_PARTIAL', 'DOCTOR_PARTIAL_APPROVED', note || `Partial approval: ${selectedTests.length}/${req.tests.length} tests`, selectedTests);
-      } else {
-        updateStatus('DOCTOR_REJECTED', 'DOCTOR_REJECTED', note || 'All tests rejected');
-      }
-    } else {
-      updateStatus('DOCTOR_REJECTED', 'DOCTOR_REJECTED', note || 'Rejected by doctor');
-    }
-  };
-
-  const handleHrAction = () => {
-    const thisYearReqs = requests.filter(r => 
-      r.employeeId === req.employeeId && 
-      yr(r.createdAt) === new Date().getFullYear() && 
-      r.status === 'COMPLETED' &&
-      r.id !== req.id
-    );
-    const usage = thisYearReqs.length;
-    
-    if (usage >= ANNUAL_LIMIT) {
-      updateStatus('HR_RESTRICTED', 'HR_RESTRICTED', `Restricted: ${usage}/${ANNUAL_LIMIT} limit reached. Forwarded to Admin.`);
-    } else {
-      updateStatus('PENDING_PATHOLOGY', 'HR_APPROVED', note || `Approved by HR. Usage: ${usage + 1}/${ANNUAL_LIMIT}`);
-    }
-  };
-
-  const handleAdminAction = (approve) => {
-    if (approve) updateStatus('PENDING_PATHOLOGY', 'ADMIN_APPROVED', note || 'Override approved by Admin');
-    else updateStatus('ADMIN_REJECTED', 'ADMIN_REJECTED', note || 'Rejected by Admin');
-  };
-
-  const handlePathComplete = () => {
-    if (selectedTests.length === req.approvedTests?.length) {
-      updateStatus('COMPLETED', 'COMPLETED', note || 'All tests completed');
-    } else if (selectedTests.length > 0) {
-      updateStatus('PATH_PARTIAL', 'PATH_PARTIAL', note || `Partial complete: ${selectedTests.length}/${req.approvedTests?.length || req.tests.length} tests`, selectedTests);
-    }
-  };
-
-  const canDoctorAct = req.status === 'PENDING_DOCTOR' && (session.role === 'doctor' || session.role === 'admin');
-  const canHrAct = (req.status === 'PENDING_HR' || req.status === 'PENDING_HR_PARTIAL') && (session.role === 'hr' || session.role === 'admin');
-  const canAdminAct = (req.status === 'HR_RESTRICTED' || req.status === 'PENDING_ADMIN') && session.role === 'admin';
-  const canPathAct = (req.status === 'PENDING_PATHOLOGY' || req.status === 'PATH_PARTIAL') && (session.role === 'pathologist' || session.role === 'admin');
-
-  const printSlip = () => {
-    const approvedTestObjs = tests.filter(t => (req.approvedTests || req.tests).includes(t.id));
-    const totalCostVal = approvedTestObjs.reduce((s, t) => s + t.price, 0);
-    const emp = employees.find(e => e.id === req.employeeId);
-    const approvedBy = (req.timeline || []).find(t => t.stage === 'HR_APPROVED' || t.stage === 'ADMIN_APPROVED');
-    const doctorEntry = (req.timeline || []).find(t => t.stage === 'DOCTOR_APPROVED' || t.stage === 'DOCTOR_PARTIAL_APPROVED');
-    const completedEntry = (req.timeline || []).find(t => t.stage === 'COMPLETED');
-
-    const html = `<!DOCTYPE html>
-<html>
+<!DOCTYPE html>
+<html lang="en">
 <head>
-  <meta charset="UTF-8"/>
-  <title>Pathology Test Slip – ${req.slipNo || req.reqNo}</title>
-  <style>
-    *{margin:0;padding:0;box-sizing:border-box;}
-    body{font-family:'Segoe UI',Arial,sans-serif;font-size:12px;color:#111;background:#fff;padding:0;}
-    .page{width:210mm;min-height:148mm;margin:0 auto;padding:14mm 16mm 12mm;}
-    /* ---- Header ---- */
-    .header{display:flex;align-items:flex-start;justify-content:space-between;border-bottom:2px solid #1e293b;padding-bottom:10px;margin-bottom:12px;}
-    .org-name{font-size:17px;font-weight:800;color:#1e293b;letter-spacing:-.3px;}
-    .org-sub{font-size:10px;color:#475569;margin-top:2px;}
-    .slip-title{text-align:right;}
-    .slip-title h2{font-size:14px;font-weight:700;color:#1e293b;text-transform:uppercase;letter-spacing:.5px;}
-    .slip-title p{font-size:10px;color:#64748b;margin-top:3px;}
-    /* ---- Barcode-style strip ---- */
-    .strip{background:#1e293b;color:#fff;display:flex;justify-content:space-between;align-items:center;padding:6px 12px;border-radius:4px;margin-bottom:12px;font-size:11px;font-weight:600;letter-spacing:.3px;}
-    .strip span{font-family:monospace;font-size:13px;}
-    /* ---- Info grid ---- */
-    .info-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px 20px;margin-bottom:12px;}
-    .info-block{background:#f8fafc;border:1px solid #e2e8f0;border-radius:5px;padding:8px 10px;}
-    .info-block .label{font-size:9px;font-weight:600;text-transform:uppercase;color:#94a3b8;letter-spacing:.5px;margin-bottom:3px;}
-    .info-block .val{font-size:12px;font-weight:600;color:#0f172a;}
-    .info-block .sub{font-size:10px;color:#64748b;margin-top:1px;}
-    /* ---- Tests table ---- */
-    table{width:100%;border-collapse:collapse;margin-bottom:12px;}
-    thead th{background:#1e293b;color:#fff;padding:7px 10px;text-align:left;font-size:10px;font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
-    thead th:last-child{text-align:right;}
-    tbody tr{border-bottom:1px solid #f1f5f9;}
-    tbody tr:nth-child(even){background:#f8fafc;}
-    tbody td{padding:7px 10px;font-size:11px;color:#334155;}
-    tbody td:last-child{text-align:right;font-weight:600;}
-    .total-row td{background:#f1f5f9;font-weight:700;font-size:12px;padding:8px 10px;border-top:2px solid #cbd5e1;}
-    .total-row td:last-child{color:#1e293b;font-size:13px;}
-    /* ---- Notes ---- */
-    .notes{border:1px solid #e2e8f0;border-radius:5px;padding:8px 10px;margin-bottom:12px;}
-    .notes .label{font-size:9px;font-weight:600;text-transform:uppercase;color:#94a3b8;letter-spacing:.5px;margin-bottom:4px;}
-    .notes p{font-size:11px;color:#475569;}
-    /* ---- Signature ---- */
-    .sigs{display:grid;grid-template-columns:1fr 1fr 1fr;gap:16px;margin-top:16px;padding-top:12px;border-top:1.5px dashed #cbd5e1;}
-    .sig-box{text-align:center;}
-    .sig-line{border-bottom:1px solid #94a3b8;height:32px;margin-bottom:5px;}
-    .sig-label{font-size:9px;color:#64748b;font-weight:600;text-transform:uppercase;letter-spacing:.4px;}
-    .sig-name{font-size:10px;color:#334155;margin-top:2px;}
-    /* ---- Status banner ---- */
-    .status-banner{display:inline-block;padding:3px 10px;border-radius:3px;font-size:10px;font-weight:700;text-transform:uppercase;letter-spacing:.5px;}
-    .status-pending{background:#fef3c7;color:#92400e;border:1px solid #fde68a;}
-    .status-done{background:#d1fae5;color:#065f46;border:1px solid #a7f3d0;}
-    /* ---- Footer ---- */
-    .footer{margin-top:14px;padding-top:8px;border-top:1px solid #e2e8f0;display:flex;justify-content:space-between;align-items:center;}
-    .footer p{font-size:9px;color:#94a3b8;}
-    @media print{
-      @page{size:A5 landscape;margin:10mm;}
-      body{-webkit-print-color-adjust:exact;print-color-adjust:exact;}
-      .page{padding:0;width:100%;}
-    }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PathoFlex - Corporate Wellness SaaS</title>
+    <!-- Tailwind CSS for sleek UI -->
+    <script src="https://cdn.jsdelivr.net/npm/@tailwindcss/browser@4"></script>
+    <!-- React and ReactDOM CDNs -->
+    <script crossorigin src="https://unpkg.com/react@18/umd/react.development.js"></script>
+    <script crossorigin src="https://unpkg.com/react-dom@18/umd/react-dom.development.js"></script>
+    <!-- Babel for JSX compilation in browser -->
+    <script src="https://unpkg.com/@babel/standalone/babel.min.js"></script>
+    <!-- Lucide Icons for SaaS Vibe -->
+    <script src="https://unpkg.com/lucide@latest"></script>
+    <style>
+        @media print {
+            body * { visibility: hidden; }
+            #print-area, #print-area * { visibility: visible; }
+            #print-area { position: absolute; left: 0; top: 0; width: 100%; }
+            .no-print { display: none !important; }
+        }
+    </style>
 </head>
-<body>
-<div class="page">
-  <div class="header">
-    <div>
-      <div class="org-name">Pathology Services</div>
-      <div class="org-sub">Employee Health Benefit Programme</div>
-    </div>
-    <div class="slip-title">
-      <h2>Test Requisition Slip</h2>
-      <p>Slip No: <strong>${req.slipNo || req.reqNo}</strong></p>
-      <p>Issued: ${new Date().toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</p>
-    </div>
-  </div>
+<body class="bg-slate-900 text-slate-100 font-sans antialiased">
 
-  <div class="strip">
-    <span>REQ: ${req.reqNo}</span>
-    <span>|</span>
-    <span>EMP: ${req.employeeCode}</span>
-    <span>|</span>
-    <span>${new Date(req.createdAt).toLocaleDateString('en-GB',{day:'2-digit',month:'short',year:'numeric'})}</span>
-    <span>|</span>
-    <span class="status-banner ${req.status === 'COMPLETED' ? 'status-done' : 'status-pending'}">${req.status === 'COMPLETED' ? '✓ COMPLETED' : (req.status || '').replace(/_/g,' ')}</span>
-  </div>
+    <div id="root"></div>
 
-  <div class="info-grid">
-    <div class="info-block">
-      <div class="label">Employee (Sponsor)</div>
-      <div class="val">${req.employeeName}</div>
-      <div class="sub">${req.employeeCode}${emp ? ` · ${emp.department} · ${emp.designation}` : ''}</div>
-    </div>
-    <div class="info-block">
-      <div class="label">Patient / Beneficiary</div>
-      <div class="val">${req.beneficiary.name}</div>
-      <div class="sub">Relation: ${req.beneficiary.relation}${req.beneficiary.age ? ` · Age: ${req.beneficiary.age} yrs` : ''}</div>
-    </div>
-    <div class="info-block">
-      <div class="label">Doctor Clearance</div>
-      <div class="val">${doctorEntry ? doctorEntry.by : '—'}</div>
-      <div class="sub">${doctorEntry ? new Date(doctorEntry.at).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Pending'}</div>
-    </div>
-    <div class="info-block">
-      <div class="label">HR / Admin Approval</div>
-      <div class="val">${approvedBy ? approvedBy.by : '—'}</div>
-      <div class="sub">${approvedBy ? new Date(approvedBy.at).toLocaleString('en-GB',{day:'2-digit',month:'short',year:'numeric',hour:'2-digit',minute:'2-digit'}) : 'Pending'}</div>
-    </div>
-  </div>
+    <script type="text/babel">
+        // --- SEED DATA / DATABASE STRUCTURE ---
+        const INITIAL_TEST_LIBRARY = [
+            { id: 'T1', name: 'Complete Blood Count (CBC)', cost: 15 },
+            { id: 'T2', name: 'Fast Blood Sugar (FBS)', cost: 10 },
+            { id: 'T3', name: 'Lipid Profile', cost: 30 },
+            { id: 'T4', name: 'Liver Function Test (LFT)', cost: 25 },
+            { id: 'T5', name: 'Kidney Function Test (KFT)', cost: 25 },
+            { id: 'T6', name: 'Thyroid Panel (T3, T4, TSH)', cost: 35 }
+        ];
 
-  <table>
-    <thead>
-      <tr>
-        <th style="width:36px">#</th>
-        <th style="width:60px">Code</th>
-        <th>Test Name</th>
-        <th>Category</th>
-        <th style="width:80px">Price (৳)</th>
-      </tr>
-    </thead>
-    <tbody>
-      ${approvedTestObjs.map((t,i) => `
-        <tr>
-          <td>${i+1}</td>
-          <td><strong>${t.code}</strong></td>
-          <td>${t.name}</td>
-          <td>${t.category}</td>
-          <td>${t.price.toLocaleString()}</td>
-        </tr>`).join('')}
-      <tr class="total-row">
-        <td colspan="4" style="text-align:right;text-transform:uppercase;letter-spacing:.5px;font-size:10px;">Total Amount</td>
-        <td>৳ ${totalCost.toLocaleString()}</td>
-      </tr>
-    </tbody>
-  </table>
+        const INITIAL_EMPLOYEES = [
+            { id: 'EMP001', name: 'Alice Smith', email: 'alice@company.com', isConfirmed: true, role: 'USER' },
+            { id: 'EMP002', name: 'Dr. Bob Jones', email: 'bob@company.com', isConfirmed: true, role: 'DOCTOR' },
+            { id: 'EMP003', name: 'Charlie Brown', email: 'charlie@company.com', isConfirmed: false, role: 'USER' },
+            { id: 'EMP004', name: 'Helen Ross', email: 'helen@company.com', isConfirmed: true, role: 'HR' },
+            { id: 'EMP005', name: 'Pat Kumar', email: 'pat@company.com', isConfirmed: true, role: 'PATHOLOGIST' },
+            { id: 'EMP006', name: 'Devon Miller', email: 'admin@company.com', isConfirmed: true, role: 'ADMIN' }
+        ];
 
-  ${req.notes ? `<div class="notes"><div class="label">Clinical Notes / Instructions</div><p>${req.notes}</p></div>` : ''}
+        const INITIAL_REQUESTS = [
+            { 
+                id: 'REQ-101', 
+                empId: 'EMP001', 
+                patientName: 'Alice Smith (Self)', 
+                relationship: 'Self',
+                tests: [
+                    { id: 'T1', name: 'Complete Blood Count (CBC)', approved: true },
+                    { id: 'T2', name: 'Fast Blood Sugar (FBS)', approved: true }
+                ],
+                status: 'COMPLETED', 
+                date: '2026-02-14',
+                historyLog: ['Requested', 'Doctor Validated', 'HR Approved', 'Pathologist Printed']
+            },
+            { 
+                id: 'REQ-102', 
+                empId: 'EMP001', 
+                patientName: 'Sarah Smith', 
+                relationship: 'Spouse',
+                tests: [
+                    { id: 'T3', name: 'Lipid Profile', approved: true }
+                ],
+                status: 'PENDING_HR', 
+                date: '2026-05-10',
+                historyLog: ['Requested', 'Doctor Validated']
+            }
+        ];
 
-  <div class="sigs">
-    <div class="sig-box">
-      <div class="sig-line"></div>
-      <div class="sig-label">Doctor</div>
-      <div class="sig-name">${doctorEntry ? doctorEntry.by : ''}</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-line"></div>
-      <div class="sig-label">HR / Admin</div>
-      <div class="sig-name">${approvedBy ? approvedBy.by : ''}</div>
-    </div>
-    <div class="sig-box">
-      <div class="sig-line"></div>
-      <div class="sig-label">Pathologist</div>
-      <div class="sig-name">${completedEntry ? completedEntry.by : ''}</div>
-    </div>
-  </div>
+        function App() {
+            // App Core States
+            const [currentRole, setCurrentRole] = React.useState('ADMIN');
+            const [currentUser, setCurrentUser] = React.useState(INITIAL_EMPLOYEES[5]); // Default Admin
+            const [employees, setEmployees] = React.useState(INITIAL_EMPLOYEES);
+            const [testLibrary, setTestLibrary] = React.useState(INITIAL_TEST_LIBRARY);
+            const [requests, setRequests] = React.useState(INITIAL_REQUESTS);
+            
+            // UI Navigation State
+            const [activeTab, setActiveTab] = React.useState('dashboard');
+            
+            // Print Target Modal State
+            const [activePrintJob, setActivePrintJob] = React.useState(null);
 
-  <div class="footer">
-    <p>Generated: ${new Date().toLocaleString('en-GB')} · PathLab Pro</p>
-    <p>This slip is valid only with authorized signatures above</p>
-  </div>
-</div>
-<script>window.onload=function(){window.print();setTimeout(function(){window.close();},800);}</script>
-</body>
-</html>`;
-    // Remove any existing preview
-    const prev = document.getElementById('__sp__');
-    if (prev) prev.remove();
+            // Notification Feedback State
+            const [toast, setToast] = React.useState(null);
+            const triggerToast = (msg) => { setToast(msg); setTimeout(() => setToast(null), 3000); };
 
-    // Overlay wrapper
-    const overlay = document.createElement('div');
-    overlay.id = '__sp__';
-    overlay.style.cssText = 'position:fixed;inset:0;background:#cbd5e1;z-index:2147483647;overflow:auto;display:flex;flex-direction:column;font-family:Arial,sans-serif;';
+            // Handle Role Swapping Mirror Logic
+            const handleRoleChange = (roleName) => {
+                setCurrentRole(roleName);
+                const matchedUser = employees.find(e => e.role === roleName) || employees[0];
+                setCurrentUser(matchedUser);
+                triggerToast(`Switched workspace context to ${roleName}`);
+            };
 
-    // Toolbar
-    const bar = document.createElement('div');
-    bar.style.cssText = 'background:#1e293b;color:#fff;padding:10px 20px;display:flex;align-items:center;justify-content:space-between;position:sticky;top:0;flex-shrink:0;box-shadow:0 2px 8px rgba(0,0,0,.3);';
-    bar.innerHTML = '<span style="font-weight:700;font-size:14px;letter-spacing:.3px;">🖨&nbsp; Print Preview</span><div id="__sp_btns__" style="display:flex;gap:8px;"></div>';
-    overlay.appendChild(bar);
+            // Business Rule Helper: Get usage metrics for any employee
+            const getEmployeeMetrics = (empId) => {
+                const empRequests = requests.filter(r => r.empId === empId);
+                const completed = empRequests.filter(r => r.status === 'COMPLETED').length;
+                const approved = empRequests.filter(r => r.status === 'PENDING_PATHOLOGIST').length;
+                const pending = empRequests.filter(r => r.status === 'PENDING_DOC' || r.status === 'PENDING_HR').length;
+                const totalUsed = completed + approved; // Total structural deductions
+                return {
+                    completed,
+                    approved,
+                    pending,
+                    totalUsed,
+                    remaining: Math.max(0, 5 - totalUsed)
+                };
+            };
 
-    // Print button
-    const pBtn = document.createElement('button');
-    pBtn.textContent = '🖨  Print';
-    pBtn.style.cssText = 'background:#10b981;color:#fff;border:none;padding:8px 20px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;';
-    pBtn.onclick = () => {
-      const ps = document.createElement('style');
-      ps.id = '__ps__';
-      ps.textContent = '@media print{body>*:not(#__sp__){display:none!important;}#__sp__{display:block!important;position:static!important;overflow:visible!important;}#__sp__>div:first-child{display:none!important;}}';
-      document.head.appendChild(ps);
-      window.print();
-      setTimeout(() => { const el = document.getElementById('__ps__'); if (el) el.remove(); }, 4000);
-    };
+            // Global Print Trigger
+            const triggerPrint = (request) => {
+                setActivePrintJob(request);
+                setTimeout(() => {
+                    window.print();
+                }, 500);
+            };
 
-    // Close button
-    const cBtn = document.createElement('button');
-    cBtn.textContent = '✕  Close';
-    cBtn.style.cssText = 'background:#475569;color:#fff;border:none;padding:8px 16px;border-radius:6px;font-weight:700;font-size:13px;cursor:pointer;';
-    cBtn.onclick = () => overlay.remove();
+            // Mock Data Bulk Export (CSV/Excel simulator)
+            const handleExportData = (type) => {
+                let dataString = "data:text/csv;charset=utf-8,";
+                if(type === 'SUMMARY') {
+                    dataString += "Employee ID,Name,Tests Used,Remaining Status\n";
+                    employees.forEach(e => {
+                        const m = getEmployeeMetrics(e.id);
+                        dataString += `${e.id},${e.name},${m.totalUsed},${m.remaining}\n`;
+                    });
+                } else {
+                    dataString += "Request ID,Patient,Relationship,Status,Date\n";
+                    requests.forEach(r => {
+                        dataString += `${r.id},${r.patientName},${r.relationship},${r.status},${r.date}\n`;
+                    });
+                }
+                const encodedUri = encodeURI(dataString);
+                const link = document.createElement("a");
+                link.setAttribute("href", encodedUri);
+                link.setAttribute("download", `${type}_REPORT_${new Date().toISOString().split('T')[0]}.csv`);
+                document.body.appendChild(link);
+                link.click();
+                document.body.removeChild(link);
+                triggerToast("Report exported successfully!");
+            };
 
-    bar.querySelector('#__sp_btns__').appendChild(pBtn);
-    bar.querySelector('#__sp_btns__').appendChild(cBtn);
+            return (
+                <div class="min-h-screen flex flex-col justify-between">
+                    {/* Top Alert System Notification Bar */}
+                    {toast && (
+                        <div class="fixed top-4 right-4 bg-emerald-500 text-slate-950 px-4 py-3 rounded-lg shadow-2xl font-bold flex items-center space-x-2 z-50 animate-bounce">
+                            <span>{toast}</span>
+                        </div>
+                    )}
 
-    // Slip content
-    const wrap = document.createElement('div');
-    wrap.style.cssText = 'flex:1;display:flex;justify-content:center;padding:28px 20px;';
-    wrap.innerHTML = html;
-    overlay.appendChild(wrap);
+                    {/* TOP NAVBAR */}
+                    <header class="bg-slate-950 border-b border-slate-800 px-6 py-4 flex flex-wrap items-center justify-between no-print">
+                        <div class="flex items-center space-x-3">
+                            <div class="bg-indigo-600 p-2 rounded-lg text-white font-black tracking-wider">🔬 PATHOFLEX</div>
+                            <span class="text-xs text-slate-400 font-mono">v1.0.0-Beta44</span>
+                        </div>
 
-    document.body.appendChild(overlay);
-  };
+                        {/* Fast Prototyping Context Switcher */}
+                        <div class="flex items-center space-x-4 bg-slate-900 p-1.5 rounded-xl border border-slate-800">
+                            <span class="text-xs font-semibold uppercase text-slate-400 px-2">Vibe Role:</span>
+                            {['ADMIN', 'USER', 'DOCTOR', 'HR', 'PATHOLOGIST'].map((role) => (
+                                <button
+                                    key={role}
+                                    onClick={() => handleRoleChange(role)}
+                                    class={`px-3 py-1 text-xs font-bold rounded-lg transition-all ${
+                                        currentRole === role 
+                                        ? 'bg-indigo-500 text-white shadow-md' 
+                                        : 'text-slate-400 hover:text-white'
+                                    }`}
+                                >
+                                    {role}
+                                </button>
+                            ))}
+                        </div>
 
-  return (
-    <Modal open={true} onClose={onClose} title={`Request ${req.reqNo}`} size="lg">
-      <div className="space-y-5">
-        <div></div>
+                        <div class="text-right hidden md:block">
+                            <p class="text-xs font-bold text-slate-300">{currentUser.name}</p>
+                            <span class="text-[10px] font-mono bg-slate-800 text-indigo-400 px-1.5 py-0.5 rounded uppercase">{currentRole} Context</span>
+                        </div>
+                    </header>
 
-        <div className="bg-gradient-to-r from-slate-50 to-blue-50 rounded-xl p-4 print:hidden">
-          <div className="flex items-center justify-between">
-            {['Created', 'Doctor', 'HR', 'Pathology', 'Done'].map((step, i) => {
-              const stepNum = i + 1;
-              const currentStep = STAGES[req.status]?.step || 0;
-              const done = currentStep > stepNum || req.status === 'COMPLETED';
-              const active = Math.floor(currentStep) === stepNum;
-              const restricted = req.status === 'HR_RESTRICTED' && stepNum === 3;
-              return (
-                <React.Fragment key={i}>
-                  <div className="flex flex-col items-center">
-                    <div className={`w-9 h-9 rounded-full flex items-center justify-center text-xs font-bold ${
-                      done ? 'bg-emerald-500 text-white' :
-                      restricted ? 'bg-orange-500 text-white' :
-                      active ? 'bg-slate-900 text-white' : 'bg-white border border-slate-200 text-slate-400'
-                    }`}>
-                      {done ? <Check className="w-4 h-4" /> : stepNum}
+                    {/* MAIN APPLICATION WORKSPACE */}
+                    <div class="flex-1 flex flex-col md:flex-row no-print">
+                        {/* SIDEBAR NAVIGATION */}
+                        <nav class="w-full md:w-64 bg-slate-950 p-4 space-y-2 border-r border-slate-800">
+                            <p class="text-[10px] font-bold text-slate-500 tracking-wider uppercase px-3">Views</p>
+                            <button onClick={() => setActiveTab('dashboard')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'dashboard' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Dashboard</button>
+                            <button onClick={() => setActiveTab('requests')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'requests' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Test Requests</button>
+                            
+                            {currentRole === 'ADMIN' && (
+                                <>
+                                    <p class="text-[10px] font-bold text-slate-500 tracking-wider uppercase px-3 pt-4">Admin Suite</p>
+                                    <button onClick={() => setActiveTab('employees')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'employees' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Manage Employees</button>
+                                    <button onClick={() => setActiveTab('library')} class={`w-full text-left px-3 py-2 rounded-lg text-sm flex items-center space-x-2 transition-colors ${activeTab === 'library' ? 'bg-indigo-600/20 text-indigo-400 border-l-2 border-indigo-500' : 'hover:bg-slate-900 text-slate-300'}`}>Test Directory</button>
+                                </>
+                            )}
+                        </nav>
+
+                        {/* ROUTER CONTENT CONTROLLER */}
+                        <main class="flex-1 p-6 overflow-y-auto max-w-7xl mx-auto w-full">
+                            {activeTab === 'dashboard' && <DashboardView requests={requests} employees={employees} currentUser={currentUser} currentRole={currentRole} getEmployeeMetrics={getEmployeeMetrics} handleExportData={handleExportData} />}
+                            {activeTab === 'requests' && <RequestsView requests={requests} setRequests={setRequests} testLibrary={testLibrary} currentUser={currentUser} currentRole={currentRole} getEmployeeMetrics={getEmployeeMetrics} triggerPrint={triggerPrint} triggerToast={triggerToast} />}
+                            {activeTab === 'employees' && currentRole === 'ADMIN' && <EmployeesView employees={employees} setEmployees={setEmployees} getEmployeeMetrics={getEmployeeMetrics} triggerToast={triggerToast} />}
+                            {activeTab === 'library' && currentRole === 'ADMIN' && <LibraryView testLibrary={testLibrary} setTestLibrary={setTestLibrary} triggerToast={triggerToast} />}
+                        </main>
                     </div>
-                    <p className="text-[10px] mt-1 font-medium text-slate-600">{step}</p>
-                  </div>
-                  {i < 4 && <div className={`flex-1 h-0.5 mx-1 ${done ? 'bg-emerald-500' : 'bg-slate-200'}`} />}
-                </React.Fragment>
-              );
-            })}
-          </div>
-        </div>
 
-        <div className="grid grid-cols-2 gap-4 print:grid-cols-2">
-          <div>
-            <p className="text-xs text-slate-500 font-medium uppercase">Patient</p>
-            <p className="font-semibold text-slate-900">{req.beneficiary.name}</p>
-            <p className="text-sm text-slate-600">{req.beneficiary.relation}{req.beneficiary.age && ` · ${req.beneficiary.age} yrs`}</p>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium uppercase">Employee Sponsor</p>
-            <p className="font-semibold text-slate-900">{req.employeeName}</p>
-            <p className="text-sm text-slate-600">{req.employeeCode}</p>
-          </div>
-          <div className="print:hidden">
-            <p className="text-xs text-slate-500 font-medium uppercase">Status</p>
-            <div className="mt-1"><StatusBadge status={req.status} /></div>
-          </div>
-          <div>
-            <p className="text-xs text-slate-500 font-medium uppercase">Requested</p>
-            <p className="text-sm text-slate-900">{req.createdAt.slice(0, 10)}</p>
-            <p className="text-xs text-slate-500">by {req.requesterName}</p>
-          </div>
-        </div>
+                    {/* --- INVISIBLE PRINT LAYER (Triggered via system UI mechanics) --- */}
+                    <div id="print-area" class="hidden print:block p-8 text-slate-950 bg-white min-h-screen">
+                        {activePrintJob && (
+                            <div>
+                                <div class="border-b-2 border-slate-900 pb-4 mb-6 flex justify-between items-center">
+                                    <div>
+                                        <h1 class="text-2xl font-black uppercase tracking-tight">PATHOFLEX DISPATCH</h1>
+                                        <p class="text-sm">Corporate Medical Diagnostic Authorization Slip</p>
+                                    </div>
+                                    <div class="text-right font-mono text-xs">
+                                        <p><strong>Slip Token:</strong> {activePrintJob.id}</p>
+                                        <p><strong>Date Generated:</strong> {activePrintJob.date}</p>
+                                    </div>
+                                </div>
+                                <div class="grid grid-cols-2 gap-4 mb-6 text-sm">
+                                    <div>
+                                        <h3 class="font-bold uppercase text-slate-600 text-xs">Patient Details</h3>
+                                        <p class="text-base font-bold">{activePrintJob.patientName}</p>
+                                        <p>Relation Framework: <span class="font-semibold">{activePrintJob.relationship}</span></p>
+                                    </div>
+                                    <div>
+                                        <h3 class="font-bold uppercase text-slate-600 text-xs">Authorization Profile</h3>
+                                        <p>Corporate Acc ID: {activePrintJob.empId}</p>
+                                        <p>Current Status: <span class="font-bold tracking-wider">{activePrintJob.status}</span></p>
+                                    </div>
+                                </div>
+                                <div class="mb-8">
+                                    <h3 class="font-bold uppercase text-slate-600 text-xs mb-2">Prescribed Clinical Assays</h3>
+                                    <table class="w-full text-left border-collapse">
+                                        <thead>
+                                            <tr class="border-b border-slate-300 text-xs bg-slate-100">
+                                                <th class="p-2">Assay Code</th>
+                                                <th class="p-2">Description / Name</th>
+                                                <th class="p-2 text-right">Status</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody>
+                                            {activePrintJob.tests.map((t, idx) => (
+                                                <tr key={idx} class="border-b border-slate-200 text-sm">
+                                                    <td class="p-2 font-mono">{t.id}</td>
+                                                    <td class="p-2 font-medium">{t.name}</td>
+                                                    <td class="p-2 text-right font-bold text-xs">{t.approved ? "APPROVED/ACTIVE" : "EXCLUDED/REJECTED"}</td>
+                                                </tr>
+                                            ))}
+                                        </tbody>
+                                    </table>
+                                </div>
+                                <div class="mt-16 flex justify-between pt-8 border-t border-dashed border-slate-400 text-center text-xs">
+                                    <div>
+                                        <div class="w-40 border-b border-slate-900 mx-auto mb-1"></div>
+                                        <p>Authorized Medical Officer</p>
+                                    </div>
+                                    <div>
+                                        <div class="w-40 border-b border-slate-900 mx-auto mb-1"></div>
+                                        <p>Corporate HR Verification</p>
+                                    </div>
+                                    <div>
+                                        <div class="w-40 border-b border-slate-900 mx-auto mb-1"></div>
+                                        <p>Pathology Unit Reciever</p>
+                                    </div>
+                                </div>
+                            </div>
+                        )}
+                    </div>
 
-        {canHrAct && (
-          <Card className="p-4 bg-amber-50 border-amber-200 print:hidden">
-            <div className="flex items-start gap-3">
-              <Info className="w-5 h-5 text-amber-600 mt-0.5 shrink-0" />
-              <div className="flex-1">
-                <p className="font-medium text-amber-900 text-sm">HR Quick Preview</p>
-                <p className="text-xs text-amber-700 mt-1 mb-3">Review this employee's usage history before approving</p>
-                <Btn size="sm" variant="warning" onClick={() => setShowHRPreview(!showHRPreview)}>
-                  {showHRPreview ? 'Hide' : 'Show'} Employee History
-                </Btn>
-                {showHRPreview && (
-                  <div className="mt-3 pt-3 border-t border-amber-200">
-                    <HRPreview empId={req.employeeId} requests={requests} tests={tests} />
-                  </div>
-                )}
-              </div>
-            </div>
-          </Card>
-        )}
-
-        <div>
-          <p className="text-xs text-slate-500 font-medium uppercase mb-2">Tests Requested</p>
-          <div className="border border-slate-200 rounded-lg overflow-hidden">
-            <table className="w-full text-sm">
-              <thead className="bg-slate-50">
-                <tr>
-                  {(canDoctorAct || canPathAct) && <th className="text-left p-2 text-xs font-medium text-slate-600 w-10"></th>}
-                  <th className="text-left p-2 text-xs font-medium text-slate-600">Code</th>
-                  <th className="text-left p-2 text-xs font-medium text-slate-600">Test</th>
-                  <th className="text-left p-2 text-xs font-medium text-slate-600">Category</th>
-                  <th className="text-right p-2 text-xs font-medium text-slate-600">Price</th>
-                  <th className="text-center p-2 text-xs font-medium text-slate-600">Status</th>
-                </tr>
-              </thead>
-              <tbody>
-                {reqTests.map(t => {
-                  const isApproved = req.approvedTests?.includes(t.id);
-                  const isSelected = selectedTests.includes(t.id);
-                  const isRejected = req.rejectedTests?.includes(t.id);
-                  return (
-                    <tr key={t.id} className={`border-t border-slate-100 ${isRejected ? 'opacity-50' : ''}`}>
-                      {(canDoctorAct || canPathAct) && (
-                        <td className="p-2 print:hidden">
-                          <input 
-                            type="checkbox" 
-                            checked={isSelected}
-                            disabled={isRejected}
-                            onChange={() => {
-                              if (isSelected) setSelectedTests(selectedTests.filter(id => id !== t.id));
-                              else setSelectedTests([...selectedTests, t.id]);
-                            }}
-                            className="w-4 h-4 rounded accent-slate-900"
-                          />
-                        </td>
-                      )}
-                      <td className="p-2 font-mono text-xs">{t.code}</td>
-                      <td className="p-2">{t.name}</td>
-                      <td className="p-2 text-slate-500">{t.category}</td>
-                      <td className="p-2 text-right">৳ {t.price}</td>
-                      <td className="p-2 text-center">
-                        {isRejected ? <Pill color="red" sm>Rejected</Pill> : 
-                         isApproved ? <Pill color="emerald" sm>Approved</Pill> :
-                         <Pill color="slate" sm>Pending</Pill>}
-                      </td>
-                    </tr>
-                  );
-                })}
-                <tr className="bg-slate-50 font-semibold">
-                  <td colSpan={(canDoctorAct || canPathAct) ? "4" : "3"} className="p-2 text-right">Selected Total</td>
-                  <td className="p-2 text-right">৳ {totalCost}</td>
-                  <td className="p-2 text-center">{selectedTests.length}/{reqTests.length}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-        </div>
-
-        {req.notes && (
-          <div>
-            <p className="text-xs text-slate-500 font-medium uppercase mb-1">Notes</p>
-            <p className="text-sm text-slate-700 bg-slate-50 p-3 rounded-lg">{req.notes}</p>
-          </div>
-        )}
-
-        {req.timeline && req.timeline.length > 0 && (
-          <div className="print:hidden">
-            <p className="text-xs text-slate-500 font-medium uppercase mb-2">Timeline</p>
-            <div className="space-y-2">
-              {req.timeline.map((t, i) => (
-                <div key={i} className="flex gap-3 text-sm">
-                  <div className="w-2 h-2 rounded-full bg-slate-300 mt-1.5 shrink-0"></div>
-                  <div className="flex-1">
-                    <p className="font-medium text-slate-900">{t.stage.replace(/_/g, ' ')} <span className="text-slate-400 font-normal">· {t.by}</span></p>
-                    {t.note && <p className="text-xs text-slate-600">{t.note}</p>}
-                    <p className="text-xs text-slate-400">{new Date(t.at).toLocaleString()}</p>
-                  </div>
+                    {/* VIBE CODER FOOTER */}
+                    <footer class="bg-slate-950 border-t border-slate-800 px-6 py-3 text-center text-xs text-slate-500 no-print flex flex-col md:flex-row justify-between items-center gap-2">
+                        <p>Built with ⚡ React, Tailwind & Pure Polish. Single-File Production Sandbox.</p>
+                        <div class="flex space-x-4">
+                            <span class="hover:text-slate-300 cursor-pointer">API Webhook Spec</span>
+                            <span class="hover:text-slate-300 cursor-pointer">Base44 Engine Docs</span>
+                        </div>
+                    </footer>
                 </div>
-              ))}
-            </div>
-          </div>
-        )}
+            );
+        }
 
-        {(canDoctorAct || canHrAct || canAdminAct || canPathAct) && (
-          <div className="border-t border-slate-100 pt-4 print:hidden">
-            <textarea value={note} onChange={e => setNote(e.target.value)} placeholder="Add notes (optional)..." rows="2" className="w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-lg focus:bg-white focus:outline-none focus:ring-2 focus:ring-slate-900 mb-3" />
-            <div className="flex justify-end gap-2 flex-wrap">
-              {canDoctorAct && (
-                <>
-                  <Btn variant="danger" icon={XCircle} onClick={() => handleDoctorAction(false)}>Reject All</Btn>
-                  <Btn variant="success" icon={CheckCircle2} onClick={() => handleDoctorAction(true)} disabled={selectedTests.length === 0}>
-                    Approve {selectedTests.length < req.tests.length ? 'Selected' : 'All'} ({selectedTests.length})
-                  </Btn>
-                </>
-              )}
-              {canHrAct && <Btn variant="success" icon={CheckCircle2} onClick={handleHrAction}>Check Limit & Approve</Btn>}
-              {canAdminAct && (
-                <>
-                  <Btn variant="danger" icon={XCircle} onClick={() => handleAdminAction(false)}>Reject</Btn>
-                  <Btn variant="success" icon={CheckCircle2} onClick={() => handleAdminAction(true)}>Override Approve</Btn>
-                </>
-              )}
-              {canPathAct && (
-                <>
-                  <Btn variant="secondary" icon={Printer} onClick={printSlip}>Print Slip</Btn>
-                  <Btn variant="success" icon={CheckCircle2} onClick={handlePathComplete} disabled={selectedTests.length === 0}>
-                    Complete {selectedTests.length < (req.approvedTests?.length || req.tests.length) ? 'Selected' : 'All'} ({selectedTests.length})
-                  </Btn>
-                </>
-              )}
-            </div>
-          </div>
-        )}
+        // --- DASHBOARD ROUTE VIEW ---
+        function DashboardView({ requests, employees, currentUser, currentRole, getEmployeeMetrics, handleExportData }) {
+            const metrics = getEmployeeMetrics(currentUser.id);
+            const systemTotalRequests = requests.length;
+            const systemPendingHR = requests.filter(r => r.status === 'PENDING_HR').length;
+            const systemPendingDoc = requests.filter(r => r.status === 'PENDING_DOC').length;
 
-        {req.status === 'COMPLETED' && (
-          <div className="border-t border-slate-100 pt-4 print:hidden flex justify-end gap-2">
-            <Btn variant="secondary" icon={Printer} onClick={printSlip}>Print Slip</Btn>
-          </div>
-        )}
+            // Security Filtering Logic: Non-Admins ONLY see their own rows
+            const visibleRequests = currentRole === 'ADMIN' 
+                ? requests 
+                : requests.filter(r => r.empId === currentUser.id || (currentRole === 'DOCTOR' && r.status === 'PENDING_DOC') || (currentRole === 'HR' && r.status === 'PENDING_HR') || (currentRole === 'PATHOLOGIST' && r.status === 'PENDING_PATHOLOGIST'));
 
+            return (
+                <div class="space-y-6">
+                    <div class="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                        <div>
+                            <h2 class="text-2xl font-bold tracking-tight">Workspace Central</h2>
+                            <p class="text-sm text-slate-400">Real-time status metrics and authorization pipelines.</p>
+                        </div>
+                        <div class="flex items-center space-x-2">
+                            <button onClick={() => handleExportData('SUMMARY')} class="bg-slate-800 hover:bg-slate-700 text-xs font-bold px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1">📥 Export Metrics CSV</button>
+                            <button onClick={() => handleExportData('REQUESTS')} class="bg-slate-800 hover:bg-slate-700 text-xs font-bold px-3 py-2 rounded-lg border border-slate-700 flex items-center space-x-1">📥 Export Audit Logs</button>
+                        </div>
+                    </div>
 
-      </div>
-    </Modal>
-  );
-};
+                    {/* METRIC CARD GRID ARCHITECTURE */}
+                    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Personal Entitlements Used</p>
+                            <p class="text-3xl font-extrabold text-indigo-400 mt-1">{metrics.totalUsed} <span class="text-sm font-normal text-slate-500">/ 5</span></p>
+                            <p class="text-[11px] text-slate-400 mt-1">Based on Approved/Active orders</p>
+                        </div>
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Remaining Safe Requests</p>
+                            <p class="text-3xl font-extrabold text-emerald-400 mt-1">{metrics.remaining}</p>
+                            <p class="text-[11px] text-slate-400 mt-1">Autoblock protection threshold</p>
+                        </div>
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Pipeline Queue (Global)</p>
+                            <p class="text-3xl font-extrabold text-amber-400 mt-1">{systemPendingDoc + systemPendingHR}</p>
+                            <p class="text-[11px] text-slate-400 mt-1">{systemPendingDoc} Doc / {systemPendingHR} HR Pending</p>
+                        </div>
+                        <div class="bg-slate-950 p-4 rounded-xl border border-slate-800">
+                            <p class="text-[10px] font-bold text-slate-400 uppercase tracking-widest">Corporate Verification Rank</p>
+                            <p class="text-lg font-bold text-slate-200 mt-2 truncate">{currentUser.isConfirmed ? "✅ Confirmed Staff" : "❌ Unconfirmed Status"}</p>
+                            <p class="text-[11px] text-slate-500">Facility locks if unconfirmed</p>
+                        </div>
+                    </div>
 
-/* ---------------- USERS (Admin) ---------------- */
-const UsersPage = ({ users, setUsers, employees }) => {
-  const [show, setShow] = useState(false);
-  const [edit, setEdit] = useState(null);
+                    {/* LIVE VIEW FEED/TABLE */}
+                    <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                        <div class="px-4 py-3 bg-slate-900 border-b border-slate-800 flex justify-between items-center">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Authorized Data Feed Window</h3>
+                            <span class="text-[10px] font-mono text-indigo-400 bg-indigo-950 px-2 py-0.5 rounded">Showing {visibleRequests.length} relative nodes</span>
+                        </div>
+                        <div class="overflow-x-auto">
+                            <table class="w-full text-left border-collapse text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-800 text-xs text-slate-400 bg-slate-900/50">
+                                        <th class="p-3">Req ID</th>
+                                        <th class="p-3">Patient Name</th>
+                                        <th class="p-3">Relation</th>
+                                        <th class="p-3">Date Ordered</th>
+                                        <th class="p-3">Status Pipeline</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-800">
+                                    {visibleRequests.map((r) => (
+                                        <tr key={r.id} class="hover:bg-slate-900/60 transition-colors">
+                                            <td class="p-3 font-mono font-bold text-xs text-indigo-400">{r.id}</td>
+                                            <td class="p-3 font-medium text-slate-200">{r.patientName}</td>
+                                            <td class="p-3"><span class="text-xs bg-slate-800 text-slate-300 px-2 py-0.5 rounded">{r.relationship}</span></td>
+                                            <td class="p-3 text-xs text-slate-400">{r.date}</td>
+                                            <td class="p-3">
+                                                <span class={`text-[10px] font-bold tracking-wider px-2 py-1 rounded uppercase ${
+                                                    r.status === 'COMPLETED' ? 'bg-emerald-950 text-emerald-400 border border-emerald-800' :
+                                                    r.status === 'PENDING_DOC' ? 'bg-indigo-950 text-indigo-400 border border-indigo-800' :
+                                                    r.status === 'PENDING_HR' ? 'bg-amber-950 text-amber-400 border border-amber-800' :
+                                                    'bg-purple-950 text-purple-400 border border-purple-800'
+                                                }`}>
+                                                    {r.status}
+                                                </span>
+                                            </td>
+                                        </tr>
+                                    ))}
+                                    {visibleRequests.length === 0 && (
+                                        <tr>
+                                            <td colSpan="5" class="p-8 text-center text-slate-500 italic text-xs">No records tracked under this identity footprint.</td>
+                                        </tr>
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
 
-  const save = async (data) => {
-    let next;
-    if (edit) next = users.map(u => u.id === edit.id ? { ...edit, ...data } : u);
-    else next = [...users, { id: uid(), ...data }];
-    await dbSet(K.users, next);
-    setUsers(next);
-    setShow(false); setEdit(null);
-  };
+        // --- REQUESTS ROUTE VIEW (The Operations Engine) ---
+        function RequestsView({ requests, setRequests, testLibrary, currentUser, currentRole, getEmployeeMetrics, triggerPrint, triggerToast }) {
+            // New Form States
+            const [isNewModalOpen, setIsNewModalOpen] = React.useState(false);
+            const [patientName, setPatientName] = React.useState('');
+            const [relationship, setRelationship] = React.useState('Self');
+            const [selectedTests, setSelectedTests] = React.useState([]);
 
-  const del = async (id) => {
-    if (!confirm('Delete this user?')) return;
-    const next = users.filter(u => u.id !== id);
-    await dbSet(K.users, next);
-    setUsers(next);
-  };
+            // Quick Preview Engine for HR
+            const [previewMetrics, setPreviewMetrics] = React.useState(null);
 
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">System Users</h2>
-          <p className="text-slate-500 text-sm mt-1">Manage user accounts and role allocation</p>
-        </div>
-        <Btn icon={Plus} onClick={() => { setEdit(null); setShow(true); }}>Add User</Btn>
-      </div>
+            const handleToggleTestSelection = (testId) => {
+                if(selectedTests.includes(testId)) {
+                    setSelectedTests(selectedTests.filter(id => id !== testId));
+                } else {
+                    setSelectedTests([...selectedTests, testId]);
+                }
+            };
 
-      <Card className="p-4">
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className="text-left text-xs text-slate-500 border-b border-slate-100">
-                <th className="pb-3 font-medium">Username</th>
-                <th className="pb-3 font-medium">Name</th>
-                <th className="pb-3 font-medium">Role</th>
-                <th className="pb-3 font-medium">Email</th>
-                <th className="pb-3 font-medium">Employee Link</th>
-                <th className="pb-3 font-medium text-right"></th>
-              </tr>
-            </thead>
-            <tbody>
-              {users.map(u => {
-                const role = ROLES.find(r => r.id === u.role);
-                return (
-                  <tr key={u.id} className="border-b border-slate-50 hover:bg-slate-50">
-                    <td className="py-3 font-mono text-xs">{u.username}</td>
-                    <td className="py-3 font-medium">{u.name}</td>
-                    <td className="py-3"><Pill color={role?.color}>{role?.label}</Pill></td>
-                    <td className="py-3 text-slate-600">{u.email}</td>
-                    <td className="py-3 text-slate-500 font-mono text-xs">{u.empCode || '—'}</td>
-                    <td className="py-3 text-right">
-                      <button onClick={() => { setEdit(u); setShow(true); }} className="p-1.5 hover:bg-slate-100 rounded"><Edit3 className="w-4 h-4 text-slate-500" /></button>
-                      <button onClick={() => del(u.id)} className="p-1.5 hover:bg-red-50 rounded"><Trash2 className="w-4 h-4 text-red-500" /></button>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </Card>
+            // Rule Framework Check: Verification status + Counter Hard Limit
+            const handleCreateRequest = (e) => {
+                e.preventDefault();
 
-      <Modal open={show} onClose={() => { setShow(false); setEdit(null); }} title={edit ? 'Edit User' : 'Add User'}>
-        <UserForm initial={edit} onSave={save} onCancel={() => { setShow(false); setEdit(null); }} employees={employees} />
-      </Modal>
-    </div>
-  );
-};
+                if (!currentUser.isConfirmed) {
+                    alert("OPERATION BLOCKED: Only Confirmed Corporate Staff Can Avail Medical Allocations.");
+                    return;
+                }
 
-const UserForm = ({ initial, onSave, onCancel, employees }) => {
-  const [f, setF] = useState(initial || { username: '', password: '', name: '', role: 'user', email: '', empCode: '' });
-  return (
-    <div className="space-y-4">
-      <div className="grid grid-cols-2 gap-4">
-        <Input label="Username *" value={f.username} onChange={e => setF({ ...f, username: e.target.value })} />
-        <Input label="Password *" type="text" value={f.password} onChange={e => setF({ ...f, password: e.target.value })} />
-        <Input label="Full Name *" value={f.name} onChange={e => setF({ ...f, name: e.target.value })} />
-        <Input label="Email" type="email" value={f.email} onChange={e => setF({ ...f, email: e.target.value })} />
-        <Select label="Role *" value={f.role} onChange={e => setF({ ...f, role: e.target.value })} options={ROLES.map(r => ({ value: r.id, label: r.label }))} />
-        <Select label="Link to Employee" value={f.empCode || ''} onChange={e => setF({ ...f, empCode: e.target.value })} options={[
-          { value: '', label: '-- None --' },
-          ...employees.map(e => ({ value: e.empCode, label: `${e.empCode} - ${e.name}` }))
-        ]} />
-      </div>
-      <div className="flex justify-end gap-2 pt-2">
-        <Btn variant="secondary" onClick={onCancel}>Cancel</Btn>
-        <Btn onClick={() => onSave(f)} disabled={!f.username || !f.password || !f.name}>Save User</Btn>
-      </div>
-    </div>
-  );
-};
+                const currentUsage = getEmployeeMetrics(currentUser.id);
+                if (currentUsage.totalUsed >= 5) {
+                    alert("AUTO NEW TEST REQUEST RESTRICTION TRIGGERED: You have completely used your 5 free diagnostic tests for the annual billing cycle.");
+                    return;
+                }
 
-/* ---------------- REPORTS ---------------- */
-const Reports = ({ requests, employees, tests, session }) => {
-  const [yearFilter, setYearFilter] = useState(new Date().getFullYear());
-  const [deptFilter, setDeptFilter] = useState('all');
+                if (selectedTests.length === 0) {
+                    alert("Please select at least one clinical assay test.");
+                    return;
+                }
 
-  const depts = useMemo(() => [...new Set(employees.map(e => e.department))], [employees]);
-  const visibleReqs = session.role === 'admin' ? requests : filterRequests(requests, session);
+                const newRequestObj = {
+                    id: `REQ-${Math.floor(1000 + Math.random() * 9000)}`,
+                    empId: currentUser.id,
+                    patientName: relationship === 'Self' ? `${currentUser.name} (Self)` : patientName,
+                    relationship,
+                    tests: selectedTests.map(id => {
+                        const libItem = testLibrary.find(t => t.id === id);
+                        return { id: libItem.id, name: libItem.name, approved: true };
+                    }),
+                    status: 'PENDING_DOC', // Auto-forwards directly to Doctor validation
+                    date: new Date().toISOString().split('T')[0],
+                    historyLog: ['Requested by User']
+                };
 
-  const filtered = useMemo(() => visibleReqs.filter(r => {
-    const matchYear = yr(r.createdAt) === yearFilter;
-    const emp = employees.find(e => e.id === r.employeeId);
-    const matchDept = deptFilter === 'all' || emp?.department === deptFilter;
-    return matchYear && matchDept;
-  }), [visibleReqs, yearFilter, deptFilter, employees]);
+                setRequests([newRequestObj, ...requests]);
+                setIsNewModalOpen(false);
+                // Clear Form Fields
+                setPatientName('');
+                setRelationship('Self');
+                setSelectedTests([]);
+                triggerToast("Diagnostic entry request saved to the pipeline!");
+            };
 
-  const exportFullReport = () => {
-    const headers = ['Req No', 'Date', 'Year', 'Month', 'Employee Code', 'Employee Name', 'Department', 'Patient', 'Relation', 'Approved Tests', 'Total Tests', 'Total Cost', 'Status'];
-    const rows = filtered.map(r => {
-      const emp = employees.find(e => e.id === r.employeeId);
-      const approvedTestsList = (r.approvedTests || r.tests).map(id => tests.find(t => t.id === id)?.name).join('; ');
-      const cost = (r.approvedTests || r.tests).reduce((s, tid) => s + (tests.find(t => t.id === tid)?.price || 0), 0);
-      return [
-        r.reqNo, r.createdAt.slice(0, 10), yr(r.createdAt), new Date(r.createdAt).toLocaleString('default', { month: 'long' }),
-        r.employeeCode, r.employeeName, emp?.department || '', r.beneficiary.name, r.beneficiary.relation,
-        approvedTestsList, r.tests.length, cost, STAGES[r.status]?.label || r.status
-      ];
-    });
-    const csv = [headers, ...rows].map(r => r.map(c => `"${c}"`).join(',')).join('\n');
-    const blob = new Blob([csv], { type: 'text/csv' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url; a.download = `pathlab-report-${yearFilter}.csv`; a.click();
-    URL.revokeObjectURL(url);
-  };
+            // Doctor Checkbox Mutation Engine
+            const toggleTestApprovalByDoctorOrPathologist = (requestId, testId) => {
+                setRequests(requests.map(req => {
+                    if (req.id === requestId) {
+                        const updatedTests = req.tests.map(t => t.id === testId ? { ...t, approved: !t.approved } : t);
+                        return { ...req, tests: updatedTests };
+                    }
+                    return req;
+                }));
+            };
 
-  const totalCost = filtered.filter(r => r.status === 'COMPLETED').reduce((s, r) => s + (r.approvedTests || r.tests).reduce((ts, tid) => ts + (tests.find(t => t.id === tid)?.price || 0), 0), 0);
+            // Pipeline Stage State Machine Transitions
+            const advancePipelineStage = (reqId, currentStage, action) => {
+                setRequests(requests.map(req => {
+                    if (req.id === reqId) {
+                        let nextStatus = req.status;
+                        let logEntry = '';
 
-  return (
-    <div className="space-y-5">
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <div>
-          <h2 className="text-2xl font-bold text-slate-900">Reports & Analytics</h2>
-          <p className="text-slate-500 text-sm mt-1">Year, month and department-wise insights</p>
-        </div>
-        <div className="flex gap-2">
-          <Select value={yearFilter} onChange={e => setYearFilter(+e.target.value)} options={[
-            { value: 2024, label: '2024' }, { value: 2025, label: '2025' }, { value: 2026, label: '2026' }
-          ]} />
-          <Select value={deptFilter} onChange={e => setDeptFilter(e.target.value)} options={[
-            { value: 'all', label: 'All Departments' },
-            ...depts.map(d => ({ value: d, label: d }))
-          ]} />
-          <Btn variant="secondary" icon={Download} onClick={exportFullReport}>Export CSV</Btn>
-          <Btn variant="secondary" icon={Printer} onClick={() => window.print()}>Print</Btn>
-        </div>
-      </div>
+                        if (currentStage === 'PENDING_DOC') {
+                            if (action === 'APPROVE') {
+                                nextStatus = 'PENDING_HR';
+                                logEntry = 'Validated & Approved by Clinical Doctor';
+                            } else {
+                                nextStatus = 'REJECTED_BY_DOC';
+                                logEntry = 'Rejected by Doctor';
+                            }
+                        } else if (currentStage === 'PENDING_HR') {
+                            const employeeUsage = getEmployeeMetrics(req.empId);
+                            
+                            if (action === 'APPROVE') {
+                                // Double safeguard limit validation check inside HR processing loop
+                                if (employeeUsage.totalUsed >= 5 && currentRole !== 'ADMIN') {
+                                    alert("CRITICAL SECURITY VIOLATION: Usage footprint exceeds maximum allowed threshold. Only Root Administrators can manually bypass and approve this request override.");
+                                    return req;
+                                }
+                                nextStatus = 'PENDING_PATHOLOGIST';
+                                logEntry = 'HR Budget Allocation Confirmed';
+                            } else {
+                                nextStatus = 'REJECTED_BY_HR';
+                                logEntry = 'HR Budget Allocation Denied';
+                            }
+                        } else if (currentStage === 'PENDING_PATHOLOGIST') {
+                            if (action === 'COMPLETE') {
+                                nextStatus = 'COMPLETED';
+                                logEntry = 'Assay Work Completed & Closed by Lab Technician';
+                            }
+                        }
 
-      <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-        {[
-          { label: 'Total Requests', val: filtered.length, color: 'blue' },
-          { label: 'Completed', val: filtered.filter(r => r.status === 'COMPLETED').length, color: 'emerald' },
-          { label: 'Total Cost Saved', val: `৳ ${totalCost.toLocaleString()}`, color: 'violet' },
-          { label: 'Unique Beneficiaries', val: new Set(filtered.map(r => r.beneficiary.name)).size, color: 'amber' }
-        ].map((c, i) => (
-          <Card key={i} className="p-5">
-            <p className="text-xs text-slate-500 font-medium uppercase tracking-wide">{c.label}</p>
-            <p className={`text-2xl font-bold text-${c.color}-600 mt-2`}>{c.val}</p>
-          </Card>
-        ))}
-      </div>
-    </div>
-  );
-};
+                        return {
+                            ...req,
+                            status: nextStatus,
+                            historyLog: [...req.historyLog, logEntry]
+                        };
+                    }
+                    return req;
+                }));
+                triggerToast(`Request state updated smoothly.`);
+            };
 
-/* ---------------- MAIN APP ---------------- */
-export default function App() {
-  const [session, setSession] = useState(null);
-  const [page, setPage] = useState('dashboard');
-  const [loading, setLoading] = useState(true);
-  const [users, setUsers] = useState([]);
-  const [employees, setEmployees] = useState([]);
-  const [tests, setTests] = useState([]);
-  const [requests, setRequests] = useState([]);
+            // Filter views based on permission rules
+            const visibleRequests = currentRole === 'ADMIN' 
+                ? requests 
+                : requests.filter(r => r.empId === currentUser.id || (currentRole === 'DOCTOR' && r.status === 'PENDING_DOC') || (currentRole === 'HR' && r.status === 'PENDING_HR') || (currentRole === 'PATHOLOGIST' && r.status === 'PENDING_PATHOLOGIST'));
 
-  useEffect(() => {
-    (async () => {
-      await seedData();
-      setUsers(await dbGet(K.users, []));
-      setEmployees(await dbGet(K.emps, []));
-      setTests(await dbGet(K.tests, []));
-      setRequests(await dbGet(K.reqs, []));
-      setLoading(false);
-    })();
-  }, []);
+            return (
+                <div class="space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold tracking-tight">Diagnostic Pipeline Registry</h2>
+                            <p class="text-sm text-slate-400">Process, manage, validate and issue operational diagnostic workflows.</p>
+                        </div>
+                        
+                        {/* Only Allow Users / Doctors / Pathologists who are executing user actions to raise requests */}
+                        {currentUser.isConfirmed && (
+                            <button 
+                                onClick={() => {
+                                    const metrics = getEmployeeMetrics(currentUser.id);
+                                    if(metrics.totalUsed >= 5) {
+                                        alert("AUTO BLOCKED: Your account usage metrics state you have already consumed your full 5 time allowance limit.");
+                                    } else {
+                                        setIsNewModalOpen(true);
+                                    }
+                                }} 
+                                class="bg-indigo-600 hover:bg-indigo-500 text-white font-bold text-xs px-4 py-2.5 rounded-xl transition-all shadow-lg"
+                            >
+                                ➕ File New Request Request
+                            </button>
+                        )}
+                    </div>
 
-  if (loading) return <div className="min-h-screen flex items-center justify-center bg-slate-50"><div className="text-slate-500">Loading...</div></div>;
-  if (!session) return <Login onLogin={(u) => { setSession(u); setPage('dashboard'); }} />;
+                    {/* MODAL WINDOW FOR NEW FILING */}
+                    {isNewModalOpen && (
+                        <div class="fixed inset-0 bg-slate-950/80 backdrop-blur-sm flex items-center justify-center p-4 z-50">
+                            <div class="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg overflow-hidden shadow-2xl">
+                                <div class="px-6 py-4 bg-slate-950 border-b border-slate-800 flex justify-between items-center">
+                                    <h3 class="font-bold text-base">New Diagnostics Application Filing</h3>
+                                    <button onClick={() => setIsNewModalOpen(false)} class="text-slate-400 hover:text-white text-xs">✕ Close</button>
+                                </div>
+                                <form onSubmit={handleCreateRequest} class="p-6 space-y-4">
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Relationship Framework</label>
+                                        <select 
+                                            value={relationship} 
+                                            onChange={(e) => setRelationship(e.target.value)}
+                                            class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                                        >
+                                            <option value="Self">Self (Primary Employee Profile)</option>
+                                            <option value="Spouse">Spouse</option>
+                                            <option value="Parents">Parent</option>
+                                            <option value="Children">Child</option>
+                                        </select>
+                                    </div>
 
-  const role = session.role;
-  const nav = [
-    { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard, roles: ['admin', 'user', 'doctor', 'hr', 'pathologist'] },
-    { id: 'new', label: 'New Request', icon: FilePlus2, roles: ['admin', 'user', 'doctor', 'pathologist'] },
-    { id: 'mine', label: 'My Requests', icon: ClipboardList, roles: ['user', 'doctor', 'pathologist', 'admin'] },
-    { id: 'doctor', label: 'Doctor Queue', icon: Stethoscope, roles: ['doctor', 'admin'] },
-    { id: 'hr', label: 'HR Queue', icon: UsersIcon, roles: ['hr', 'admin'] },
-    { id: 'admin-q', label: 'Restricted Queue', icon: AlertTriangle, roles: ['admin'] },
-    { id: 'pathology', label: 'Pathology Queue', icon: Microscope, roles: ['pathologist', 'admin'] },
-    { id: 'all', label: 'All Requests', icon: FileText, roles: ['admin'] },
-    { id: 'employees', label: 'Employees', icon: UserCheck, roles: ['admin', 'hr'] },
-    { id: 'tests', label: 'Test Library', icon: FlaskConical, roles: ['admin', 'pathologist', 'doctor', 'hr', 'user'] },
-    { id: 'users', label: 'System Users', icon: Lock, roles: ['admin'] },
-    { id: 'reports', label: 'Reports', icon: BarChart3, roles: ['admin', 'hr'] }
-  ].filter(n => n.roles.includes(role));
+                                    {relationship !== 'Self' && (
+                                        <div>
+                                            <label class="block text-xs font-bold uppercase text-slate-400 mb-1">Dependent Family Member Name</label>
+                                            <input 
+                                                type="text" 
+                                                required
+                                                value={patientName}
+                                                onChange={(e) => setPatientName(e.target.value)}
+                                                placeholder="Enter Full Legal Name"
+                                                class="w-full bg-slate-950 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                                            />
+                                        </div>
+                                    )}
 
-  const roleInfo = ROLES.find(r => r.id === role);
+                                    <div>
+                                        <label class="block text-xs font-bold uppercase text-slate-400 mb-1.5">Select Targeted Pathology Tests (Select Multiselect Checkbox Cluster)</label>
+                                        <div class="bg-slate-950 border border-slate-800 rounded-lg p-3 max-h-48 overflow-y-auto space-y-2">
+                                            {testLibrary.map(t => (
+                                                <label key={t.id} class="flex items-center space-x-3 text-xs text-slate-300 cursor-pointer hover:text-white">
+                                                    <input 
+                                                        type="checkbox" 
+                                                        checked={selectedTests.includes(t.id)}
+                                                        onChange={() => handleToggleTestSelection(t.id)}
+                                                        class="rounded bg-slate-900 border-slate-700 text-indigo-600 focus:ring-0 focus:ring-offset-0"
+                                                    />
+                                                    <span>{t.name}</span>
+                                                </label>
+                                            ))}
+                                        </div>
+                                    </div>
 
-  const renderPage = () => {
-    if (page === 'dashboard') return <Dashboard session={session} requests={requests} employees={employees} tests={tests} users={users} />;
-    if (page === 'new') return <NewRequest session={session} employees={employees} tests={tests} requests={requests} setRequests={setRequests} onDone={() => setPage('mine')} />;
-    if (page === 'mine') return <RequestsList mode="mine" requests={requests} setRequests={setRequests} tests={tests} employees={employees} users={users} session={session} />;
-    if (page === 'doctor') return <RequestsList mode="doctor" requests={requests} setRequests={setRequests} tests={tests} employees={employees} users={users} session={session} />;
-    if (page === 'hr') return <RequestsList mode="hr" requests={requests} setRequests={setRequests} tests={tests} employees={employees} users={users} session={session} />;
-    if (page === 'admin-q') return <RequestsList mode="admin" requests={requests} setRequests={setRequests} tests={tests} employees={employees} users={users} session={session} />;
-    if (page === 'pathology') return <RequestsList mode="pathology" requests={requests} setRequests={setRequests} tests={tests} employees={employees} users={users} session={session} />;
-    if (page === 'all') return <RequestsList mode="all" requests={requests} setRequests={setRequests} tests={tests} employees={employees} users={users} session={session} />;
-    if (page === 'employees') return <Employees employees={employees} setEmployees={setEmployees} session={session} />;
-    if (page === 'tests') return <TestLibrary tests={tests} setTests={setTests} session={session} />;
-    if (page === 'users') return <UsersPage users={users} setUsers={setUsers} employees={employees} />;
-    if (page === 'reports') return <Reports requests={requests} employees={employees} tests={tests} session={session} />;
-    return null;
-  };
+                                    <div class="pt-4 border-t border-slate-800 flex justify-end space-x-2">
+                                        <button type="button" onClick={() => setIsNewModalOpen(false)} class="bg-slate-800 hover:bg-slate-700 text-xs font-bold px-4 py-2 rounded-lg">Cancel</button>
+                                        <button type="submit" class="bg-indigo-600 hover:bg-indigo-500 text-xs font-bold px-4 py-2 rounded-lg text-white">Submit Into Network Pipeline</button>
+                                    </div>
+                                </form>
+                            </div>
+                        </div>
+                    )}
 
-  return (
-    <div className="min-h-screen bg-slate-50 flex">
+                    {/* HR QUICK PREVIEW CARD DRAWER */}
+                    {previewMetrics && (
+                        <div class="bg-indigo-950/40 border border-indigo-500/30 rounded-xl p-4 relative animate-fade-in">
+                            <button onClick={() => setPreviewMetrics(null)} class="absolute top-2 right-3 text-indigo-400 hover:text-white text-xs font-bold">✕ Close Preview</button>
+                            <h4 class="text-xs font-bold uppercase tracking-wider text-indigo-400 mb-2">⚡ HR Context Fast Audit Preview Tracker</h4>
+                            <div class="grid grid-cols-2 md:grid-cols-5 gap-4 text-center">
+                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Completed</p><p class="text-lg font-bold text-slate-200">{previewMetrics.completed}</p></div>
+                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Approved Queue</p><p class="text-lg font-bold text-slate-200">{previewMetrics.approved}</p></div>
+                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Pending Review</p><p class="text-lg font-bold text-slate-200">{previewMetrics.pending}</p></div>
+                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Total Allocated Deductions</p><p class="text-lg font-bold text-amber-400">{previewMetrics.totalUsed} / 5</p></div>
+                                <div class="bg-slate-950/60 p-2 rounded-lg"><p class="text-[10px] text-slate-400 uppercase">Remaining Scope</p><p class="text-lg font-bold text-emerald-400">{previewMetrics.remaining}</p></div>
+                            </div>
+                        </div>
+                    )}
 
-      <aside className="w-60 bg-white border-r border-slate-200 flex flex-col print:hidden">
-        <div className="p-5 border-b border-slate-100">
-          <div className="flex items-center gap-2.5">
-            <div className="w-9 h-9 rounded-lg bg-gradient-to-br from-slate-900 to-slate-700 flex items-center justify-center">
-              <FlaskConical className="w-5 h-5 text-white" />
-            </div>
-            <div>
-              <p className="font-bold text-slate-900">PathLab Pro</p>
-              <p className="text-[10px] text-slate-500 uppercase tracking-wide">Production Grade</p>
-            </div>
-          </div>
-        </div>
-        <nav className="flex-1 p-3 overflow-y-auto">
-          {nav.map(n => (
-            <button key={n.id} onClick={() => setPage(n.id)} className={`w-full flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm font-medium mb-0.5 transition-all ${page === n.id ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}>
-              <n.icon className="w-4 h-4" />
-              {n.label}
-            </button>
-          ))}
-        </nav>
-        <div className="p-3 border-t border-slate-100">
-          <div className="flex items-center gap-2.5 mb-3 p-2">
-            <div className={`w-9 h-9 rounded-full bg-${roleInfo?.color}-100 flex items-center justify-center`}>
-              {roleInfo && <roleInfo.icon className={`w-4 h-4 text-${roleInfo?.color}-600`} />}
-            </div>
-            <div className="flex-1 min-w-0">
-              <p className="text-sm font-medium text-slate-900 truncate">{session.name}</p>
-              <p className="text-[10px] text-slate-500 uppercase tracking-wide">{roleInfo?.label}</p>
-            </div>
-          </div>
-          <button onClick={() => setSession(null)} className="w-full flex items-center gap-2 px-3 py-2 rounded-lg text-sm text-slate-600 hover:bg-slate-100">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </button>
-        </div>
-      </aside>
+                    {/* INTERACTIVE WORKFLOW REGISTRY CARD COMPONENT LOOP */}
+                    <div class="space-y-4">
+                        {visibleRequests.map((req) => {
+                            const metrics = getEmployeeMetrics(req.empId);
+                            return (
+                                <div key={req.id} class="bg-slate-950 border border-slate-800 rounded-xl p-5 shadow-md flex flex-col space-y-4">
+                                    <div class="flex flex-wrap items-start justify-between gap-2 border-b border-slate-900 pb-3">
+                                        <div>
+                                            <div class="flex items-center space-x-2">
+                                                <span class="text-xs font-mono font-bold text-indigo-400">{req.id}</span>
+                                                <span class="text-slate-600">•</span>
+                                                <h3 class="font-bold text-sm text-slate-100">{req.patientName}</h3>
+                                                <span class="text-[10px] bg-slate-900 px-1.5 py-0.5 rounded text-slate-400">{req.relationship}</span>
+                                            </div>
+                                            <p class="text-xs text-slate-500 mt-0.5">Filing Employee ID Link: <span class="font-mono text-slate-400">{req.empId}</span> | Date: {req.date}</p>
+                                        </div>
+                                        <div class="flex items-center space-x-2">
+                                            {currentRole === 'HR' && (
+                                                <button 
+                                                    onClick={() => setPreviewMetrics(metrics)}
+                                                    class="bg-indigo-900/40 text-indigo-400 border border-indigo-800/40 hover:bg-indigo-900 text-[11px] font-bold px-2.5 py-1 rounded"
+                                                >
+                                                    🔍 Quick Audit Look
+                                                </button>
+                                            )}
+                                            <span class={`text-[10px] font-bold tracking-widest uppercase px-2.5 py-1 rounded-md ${
+                                                req.status === 'COMPLETED' ? 'bg-emerald-950 text-emerald-400' :
+                                                req.status === 'PENDING_DOC' ? 'bg-indigo-950 text-indigo-400' :
+                                                req.status === 'PENDING_HR' ? 'bg-amber-950 text-amber-400' :
+                                                'bg-purple-950 text-purple-400'
+                                            }`}>
+                                                {req.status}
+                                            </span>
+                                        </div>
+                                    </div>
 
-      <main className="flex-1 overflow-x-hidden">
-        <div className="max-w-7xl mx-auto p-6 print:p-0">
-          {renderPage()}
-        </div>
-      </main>
-    </div>
-  );
-}
+                                    {/* INNER TESTS CHECKBOX LOOP MATRIX */}
+                                    <div>
+                                        <p class="text-[10px] font-bold text-slate-400 uppercase tracking-wider mb-2">Targeted Diagnostic Assay Profiles Checkbox Cluster</p>
+                                        <div class="grid grid-cols-1 md:grid-cols-2 gap-2 bg-slate-900/50 p-3 rounded-lg border border-slate-900">
+                                            {req.tests.map((test) => {
+                                                const canMutate = (currentRole === 'DOCTOR' && req.status === 'PENDING_DOC') || (currentRole === 'PATHOLOGIST' && req.status === 'PENDING_PATHOLOGIST') || currentRole === 'ADMIN';
+                                                return (
+                                                    <label key={test.id} class={`flex items-center space-x-3 text-xs p-1.5 rounded transition-colors ${canMutate ? 'cursor-pointer hover:bg-slate-900' : ''}`}>
+                                                        <input 
+                                                            type="checkbox"
+                                                            disabled={!canMutate}
+                                                            checked={test.approved}
+                                                            onChange={() => toggleTestApprovalByDoctorOrPathologist(req.id, test.id)}
+                                                            class="rounded bg-slate-950 border-slate-700 text-indigo-600 focus:ring-0 focus:ring-offset-0 disabled:opacity-60"
+                                                        />
+                                                        <span class={`font-medium ${test.approved ? 'text-slate-200' : 'text-slate-500 line-through'}`}>{test.name}</span>
+                                                    </label>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
+
+                                    {/* CONTEXTUAL ACTION DRIVERS LAYER */}
+                                    <div class="flex flex-wrap items-center justify-between gap-2 pt-2 border-t border-slate-900/60">
+                                        <div class="text-[11px] text-slate-500 max-w-md truncate">
+                                            <strong>Audit Track:</strong> {req.historyLog[req.historyLog.length - 1]}
+                                        </div>
+
+                                        <div class="flex items-center space-x-2">
+                                            {/* Doctor Action Set */}
+                                            {currentRole === 'DOCTOR' && req.status === 'PENDING_DOC' && (
+                                                <>
+                                                    <button onClick={() => advancePipelineStage(req.id, 'PENDING_DOC', 'REJECT')} class="bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-rose-900">Deny Medical Validation</button>
+                                                    <button onClick={() => advancePipelineStage(req.id, 'PENDING_DOC', 'APPROVE')} class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">Validate & Sign Request</button>
+                                                </>
+                                            )}
+
+                                            {/* HR Action Set */}
+                                            {currentRole === 'HR' && req.status === 'PENDING_HR' && (
+                                                <>
+                                                    <button onClick={() => advancePipelineStage(req.id, 'PENDING_HR', 'REJECT')} class="bg-rose-950 text-rose-400 hover:bg-rose-900 text-xs font-bold px-3 py-1.5 rounded-lg border border-rose-900">Deny Request Allocation</button>
+                                                    <button 
+                                                        onClick={() => advancePipelineStage(req.id, 'PENDING_HR', 'APPROVE')} 
+                                                        disabled={metrics.totalUsed >= 5}
+                                                        class={`text-xs font-bold px-3 py-1.5 rounded-lg ${metrics.totalUsed >= 5 ? 'bg-slate-800 text-slate-500 cursor-not-allowed' : 'bg-emerald-600 hover:bg-emerald-500 text-white'}`}
+                                                    >
+                                                        {metrics.totalUsed >= 5 ? "⚠️ Limit Hit (Locked for Admin Override Only)" : "Confirm Budget & Pass"}
+                                                    </button>
+                                                </>
+                                            )}
+
+                                            {/* Admin Override Escape Hatch for HR Blocked States */}
+                                            {currentRole === 'ADMIN' && req.status === 'PENDING_HR' && metrics.totalUsed >= 5 && (
+                                                <button onClick={() => advancePipelineStage(req.id, 'PENDING_HR', 'APPROVE')} class="bg-amber-600 hover:bg-amber-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">⚡ Root Admin Force Approve Override</button>
+                                            )}
+
+                                            {/* Pathologist Action Set */}
+                                            {(currentRole === 'PATHOLOGIST' || currentRole === 'ADMIN') && (
+                                                <button onClick={() => triggerPrint(req)} class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-bold px-3 py-1.5 rounded-lg border border-slate-700 flex items-center space-x-1">🖨️ Print Slip Paperwork</button>
+                                            )}
+                                            {currentRole === 'PATHOLOGIST' && req.status === 'PENDING_PATHOLOGIST' && (
+                                                <button onClick={() => advancePipelineStage(req.id, 'PENDING_PATHOLOGIST', 'COMPLETE')} class="bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-bold px-3 py-1.5 rounded-lg">✅ Complete Assay Logging</button>
+                                            )}
+                                        </div>
+                                    </div>
+                                </div>
+                            );
+                        })}
+                        {visibleRequests.length === 0 && (
+                            <div class="bg-slate-950 border border-slate-800 rounded-xl p-12 text-center text-slate-500 italic text-sm">No action queue requirements tracked for your current role workspace layout.</div>
+                        )}
+                    </div>
+                </div>
+            );
+        }
+
+        // --- EMPLOYEES ROUTE VIEW ---
+        function EmployeesView({ employees, setEmployees, getEmployeeMetrics, triggerToast }) {
+            const [showBulkTemplate, setShowBulkTemplate] = React.useState(false);
+            const [bulkInputText, setBulkInputText] = React.useState('');
+
+            const handleToggleStatus = (empId) => {
+                setEmployees(employees.map(e => e.id === empId ? { ...e, isConfirmed: !e.isConfirmed } : e));
+                triggerToast("User account verification status mutated.");
+            };
+
+            const handleProcessBulkUpload = (e) => {
+                e.preventDefault();
+                if(!bulkInputText.trim()) return;
+
+                const lines = bulkInputText.trim().split('\n');
+                const newEmployeesParsed = [];
+
+                lines.forEach(line => {
+                    const columns = line.split(',');
+                    if (columns.length >= 4) {
+                        newEmployeesParsed.push({
+                            id: columns[0].trim(),
+                            name: columns[1].trim(),
+                            email: columns[2].trim(),
+                            isConfirmed: columns[3].trim().toLowerCase() === 'true',
+                            role: (columns[4] || 'USER').trim().toUpperCase()
+                        });
+                    }
+                });
+
+                if(newEmployeesParsed.length > 0) {
+                    setEmployees([...employees, ...newEmployeesParsed]);
+                    setBulkInputText('');
+                    setShowBulkTemplate(false);
+                    triggerToast(`Successfully loaded ${newEmployeesParsed.length} new employees into memory runtime stack!`);
+                } else {
+                    alert("Parsing Error. Please strictly verify your string formatting matches the schema matrix rule layout.");
+                }
+            };
+
+            return (
+                <div class="space-y-6">
+                    <div class="flex items-center justify-between">
+                        <div>
+                            <h2 class="text-2xl font-bold tracking-tight">Corporate Personnel Directory</h2>
+                            <p class="text-sm text-slate-400">Configure core workforce attributes and toggle framework rules permissions.</p>
+                        </div>
+                        <button onClick={() => setShowBulkTemplate(!showBulkTemplate)} class="bg-indigo-600 hover:bg-indigo-500 text-xs font-bold px-3 py-2 rounded-xl transition-all shadow-md">📂 CSV Bulk Upload Tool</button>
+                    </div>
+
+                    {/* BULK DATA SHEET PARSING DRAWER */}
+                    {showBulkTemplate && (
+                        <div class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4 animate-fade-in">
+                            <div class="bg-slate-900 p-3 rounded-lg border border-slate-800">
+                                <p class="text-xs font-bold uppercase tracking-wider text-amber-400 mb-1">📋 Comma-Separated Values (CSV) Schema Matrix Reference Format:</p>
+                                <code class="text-[11px] font-mono block text-slate-400 select-all">
+                                    EMP101,John Doe,john@corp.com,true,USER<br/>
+                                    EMP102,Jane Roe,jane@corp.com,false,DOCTOR
+                                </code>
+                            </div>
+                            <form onSubmit={handleProcessBulkUpload} class="space-y-3">
+                                <textarea 
+                                    rows="4"
+                                    value={bulkInputText}
+                                    onChange={(e) => setBulkInputText(e.target.value)}
+                                    placeholder="Paste clean plaintext dataset data matrix rows here..."
+                                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2.5 font-mono text-xs text-slate-200 focus:outline-none focus:border-indigo-500"
+                                />
+                                <div class="flex justify-end space-x-2">
+                                    <button type="button" onClick={() => setShowBulkTemplate(false)} class="text-xs bg-slate-800 px-3 py-1.5 rounded-lg">Cancel</button>
+                                    <button type="submit" class="text-xs bg-emerald-600 hover:bg-emerald-500 px-3 py-1.5 rounded-lg font-bold text-white">Execute Inject Process Array</button>
+                                </div>
+                            </form>
+                        </div>
+                    )}
+
+                    {/* PERSONNEL CONTROL TABLE SHEET */}
+                    <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden">
+                        <table class="w-full text-left border-collapse text-sm">
+                            <thead>
+                                <tr class="border-b border-slate-800 text-xs text-slate-400 bg-slate-900/50">
+                                    <th class="p-3">Staff ID</th>
+                                    <th class="p-3">Full Legal Name</th>
+                                    <th class="p-3">Email Network Address</th>
+                                    <th class="p-3">Default System Authority Role Token</th>
+                                    <th class="p-3 text-center">Facility Status Verification Lock</th>
+                                </tr>
+                            </thead>
+                            <tbody class="divide-y divide-slate-800">
+                                {employees.map(e => {
+                                    const usage = getEmployeeMetrics(e.id);
+                                    return (
+                                        <tr key={e.id} class="hover:bg-slate-900/40 transition-colors">
+                                            <td class="p-3 font-mono text-xs text-indigo-400 font-bold">{e.id}</td>
+                                            <td class="p-3 font-medium text-slate-200">{e.name}</td>
+                                            <td class="p-3 text-xs text-slate-400 font-mono">{e.email}</td>
+                                            <td class="p-3"><span class="text-[10px] bg-slate-900 text-indigo-400 font-mono border border-indigo-950 px-2 py-0.5 rounded">{e.role}</span></td>
+                                            <td class="p-3 text-center">
+                                                <button 
+                                                    onClick={() => handleToggleStatus(e.id)}
+                                                    class={`text-xs px-3 py-1 rounded-full font-semibold transition-all ${e.isConfirmed ? 'bg-emerald-950 text-emerald-400 border border-emerald-900' : 'bg-rose-950 text-rose-400 border border-rose-900'}`}
+                                                >
+                                                    {e.isConfirmed ? "Confirmed Staff (Unlocked)" : "Unconfirmed (Blocked)"}
+                                                </button>
+                                            </td>
+                                        </tr>
+                                    );
+                                })}
+                            </tbody>
+                        </table>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- DIAGNOSTICS DIRECTORY VIEW ---
+        function LibraryView({ testLibrary, setTestLibrary, triggerToast }) {
+            const [newTestName, setNewTestName] = React.useState('');
+            const [newTestCost, setNewTestCost] = React.useState('');
+
+            const handleAddTestItem = (e) => {
+                e.preventDefault();
+                if(!newTestName.trim() || !newTestCost) return;
+
+                const newAssay = {
+                    id: `T${testLibrary.length + 1}`,
+                    name: newTestName.trim(),
+                    cost: parseFloat(newTestCost)
+                };
+
+                setTestLibrary([...testLibrary, newAssay]);
+                setNewTestName('');
+                setNewTestCost('');
+                triggerToast(`Added ${newAssay.name} to the core directory!`);
+            };
+
+            return (
+                <div class="space-y-6">
+                    <div>
+                        <h2 class="text-2xl font-bold tracking-tight">Clinical Diagnostic Catalog</h2>
+                        <p class="text-sm text-slate-400">Manage and expand the global library catalog of allowable pathology tests.</p>
+                    </div>
+
+                    <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-start">
+                        {/* LEFT FORM TO ADD ITEMS */}
+                        <form onSubmit={handleAddTestItem} class="bg-slate-950 border border-slate-800 rounded-xl p-5 space-y-4">
+                            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400">Add New Lab Assay Definition</h3>
+                            <div>
+                                <label class="block text-xs text-slate-400 font-bold mb-1">Diagnostic Assay Name</label>
+                                <input 
+                                    type="text" 
+                                    required
+                                    value={newTestName}
+                                    onChange={(e) => setNewTestName(e.target.value)}
+                                    placeholder="e.g., Vitamin D3 Hydroxy"
+                                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                                />
+                            </div>
+                            <div>
+                                <label class="block text-xs text-slate-400 font-bold mb-1">Estimated Value Base Units Cost ($)</label>
+                                <input 
+                                    type="number" 
+                                    required
+                                    value={newTestCost}
+                                    onChange={(e) => setNewTestCost(e.target.value)}
+                                    placeholder="35"
+                                    class="w-full bg-slate-900 border border-slate-800 rounded-lg p-2 text-sm text-slate-200 focus:outline-none focus:border-indigo-500"
+                                />
+                            </div>
+                            <button type="submit" class="w-full bg-indigo-600 hover:bg-indigo-500 text-xs font-bold text-white py-2 rounded-lg transition-all shadow-md">💾 Save Entry Definition</button>
+                        </form>
+
+                        {/* RIGHT DATA SHEET VIEW */}
+                        <div class="bg-slate-950 rounded-xl border border-slate-800 overflow-hidden lg:col-span-2">
+                            <table class="w-full text-left border-collapse text-sm">
+                                <thead>
+                                    <tr class="border-b border-slate-800 text-xs text-slate-400 bg-slate-900/50">
+                                        <th class="p-3">Assay Code</th>
+                                        <th class="p-3">Test Classification Name</th>
+                                        <th class="p-3 text-right">Corporate Unit Base Cost</th>
+                                    </tr>
+                                </thead>
+                                <tbody class="divide-y divide-slate-800">
+                                    {testLibrary.map(t => (
+                                        <tr key={t.id} class="hover:bg-slate-900/40 transition-colors">
+                                            <td class="p-3 font-mono text-xs text-indigo-400 font-bold">{t.id}</td>
+                                            <td class="p-3 font-medium text-slate-200">{t.name}</td>
+                                            <td class="p-3 text-right font-mono text-xs text-slate-300">${t.cost} USD</td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            );
+        }
+
+        // --- APP ENGINE BOOT INITIALIZATION ---
+        const root = ReactDOM.createRoot(document.getElementById('root'));
+        root.render(<App />);
+    </script>
+</body>
+</html>
